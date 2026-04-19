@@ -1,6 +1,9 @@
-import { notFound } from 'next/navigation';
+'use client';
 
-export const runtime = 'edge';
+import { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
+
+const WORKER_URL = 'https://dossier-worker.qsenseeee.workers.dev';
 
 interface Dossier {
   full_name: string;
@@ -10,32 +13,49 @@ interface Dossier {
   avatar_url: string;
 }
 
-async function getDossier(telegramId: string): Promise<Dossier | null> {
-  const workerUrl =
-    process.env.WORKER_URL ?? 'https://dossier-worker.qsenseeee.workers.dev';
+export default function DossierPage() {
+  const params = useParams();
+  const telegram_id = params.telegram_id as string;
 
-  try {
-    const res = await fetch(`${workerUrl}/api/dossier/${telegramId}`, {
-      cache: 'no-store',
-    });
-    if (!res.ok) return null;
-    return res.json() as Promise<Dossier>;
-  } catch {
-    return null;
+  const [dossier, setDossier] = useState<Dossier | null>(null);
+  const [status, setStatus] = useState<'loading' | 'found' | 'not_found'>('loading');
+
+  useEffect(() => {
+    if (!telegram_id || !/^\d+$/.test(telegram_id)) {
+      setStatus('not_found');
+      return;
+    }
+
+    fetch(`${WORKER_URL}/api/dossier/${telegram_id}`)
+      .then((res) => {
+        if (!res.ok) throw new Error('not found');
+        return res.json() as Promise<Dossier>;
+      })
+      .then((data) => {
+        setDossier(data);
+        setStatus('found');
+      })
+      .catch(() => setStatus('not_found'));
+  }, [telegram_id]);
+
+  if (status === 'loading') {
+    return (
+      <main className="flex items-center justify-center min-h-screen">
+        <div className="text-[var(--muted)] text-sm animate-pulse">Загрузка...</div>
+      </main>
+    );
   }
-}
 
-export default async function DossierPage({
-  params,
-}: {
-  params: Promise<{ telegram_id: string }>;
-}) {
-  const { telegram_id } = await params;
-
-  if (!/^\d+$/.test(telegram_id)) notFound();
-
-  const dossier = await getDossier(telegram_id);
-  if (!dossier) notFound();
+  if (status === 'not_found' || !dossier) {
+    return (
+      <main className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <p className="text-6xl font-bold text-[var(--border)] mb-4">404</p>
+          <p className="text-[var(--muted)] text-sm">Досье не найдено</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="max-w-2xl mx-auto px-4 py-12">
