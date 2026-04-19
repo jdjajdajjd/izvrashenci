@@ -1,5 +1,8 @@
--- run in Supabase SQL editor
+-- ============================================================
+-- Запускать по частям если что-то уже существует
+-- ============================================================
 
+-- Таблица досье
 create table if not exists dossiers (
   id          bigint primary key,
   full_name   text        not null,
@@ -10,6 +13,7 @@ create table if not exists dossiers (
   created_at  timestamptz not null default now()
 );
 
+-- Сессии бота
 create table if not exists user_sessions (
   telegram_id bigint primary key,
   state       text        not null,
@@ -17,6 +21,7 @@ create table if not exists user_sessions (
   updated_at  timestamptz not null default now()
 );
 
+-- Медиафайлы (переписка и галерея)
 create table if not exists dossier_media (
   id          uuid        primary key default gen_random_uuid(),
   dossier_id  bigint      not null references dossiers(id) on delete cascade,
@@ -25,12 +30,24 @@ create table if not exists dossier_media (
   created_at  timestamptz not null default now()
 );
 
-create index if not exists dossier_media_dossier_id_idx on dossier_media (dossier_id);
+create index if not exists dossier_media_dossier_id_idx
+  on dossier_media (dossier_id);
 
 -- RLS
 alter table dossiers      enable row level security;
 alter table user_sessions enable row level security;
 alter table dossier_media enable row level security;
+
+-- Политики (drop before create чтобы не было конфликтов)
+drop policy if exists "service full access dossiers"  on dossiers;
+drop policy if exists "service full access sessions"  on user_sessions;
+drop policy if exists "service full access media"     on dossier_media;
+drop policy if exists "public read dossiers"          on dossiers;
+drop policy if exists "public read media"             on dossier_media;
+
+-- Старые названия на случай если были созданы раньше
+drop policy if exists "service role full access on dossiers"       on dossiers;
+drop policy if exists "service role full access on user_sessions"  on user_sessions;
 
 create policy "service full access dossiers"
   on dossiers for all using (true) with check (true);
@@ -46,7 +63,3 @@ create policy "public read dossiers"
 
 create policy "public read media"
   on dossier_media for select using (true);
-
--- Storage buckets (run separately or via dashboard):
--- insert into storage.buckets (id, name, public) values ('avatars', 'avatars', true) on conflict do nothing;
--- insert into storage.buckets (id, name, public) values ('media', 'media', true) on conflict do nothing;
