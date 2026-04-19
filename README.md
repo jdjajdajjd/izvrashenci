@@ -146,3 +146,4 @@ Telegram webhook endpoint. Принимает Update объекты.
 ```
 
 Страница досье: `https://<pages-domain>/{telegram_id}`
+"// deploy" 
