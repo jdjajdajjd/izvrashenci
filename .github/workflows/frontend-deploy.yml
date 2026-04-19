@@ -6,6 +6,7 @@ on:
     paths:
       - 'frontend/**'
       - '.github/workflows/frontend-deploy.yml'
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -25,8 +26,6 @@ jobs:
       - name: Build & transform for Cloudflare Pages
         run: npx @cloudflare/next-on-pages
         working-directory: frontend
-        env:
-          NEXT_PUBLIC_WORKER_URL: ${{ secrets.WORKER_URL }}
 
       - name: Create Pages project (first run only)
         run: |
@@ -37,24 +36,34 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      - name: Set nodejs_compat on project
+      - name: Configure project (compat flags + env vars)
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WORKER_URL: ${{ secrets.WORKER_URL }}
         run: |
           curl -s -X PATCH \
-            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/dossier-frontend" \
-            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/dossier-frontend" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d '{
-              "deployment_configs": {
-                "production": {
-                  "compatibility_date": "2024-09-23",
-                  "compatibility_flags": ["nodejs_compat"]
+            -d "{
+              \"deployment_configs\": {
+                \"production\": {
+                  \"compatibility_date\": \"2024-09-23\",
+                  \"compatibility_flags\": [\"nodejs_compat\"],
+                  \"env_vars\": {
+                    \"WORKER_URL\": { \"value\": \"${WORKER_URL}\" }
+                  }
                 },
-                "preview": {
-                  "compatibility_date": "2024-09-23",
-                  "compatibility_flags": ["nodejs_compat"]
+                \"preview\": {
+                  \"compatibility_date\": \"2024-09-23\",
+                  \"compatibility_flags\": [\"nodejs_compat\"],
+                  \"env_vars\": {
+                    \"WORKER_URL\": { \"value\": \"${WORKER_URL}\" }
+                  }
                 }
               }
-            }'
+            }"
 
       - name: Deploy to Cloudflare Pages
         run: |

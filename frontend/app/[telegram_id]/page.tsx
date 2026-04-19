@@ -11,7 +11,7 @@ interface Dossier {
 }
 
 async function getDossier(telegramId: string): Promise<Dossier | null> {
-  const workerUrl = process.env.NEXT_PUBLIC_WORKER_URL;
+  const workerUrl = process.env.WORKER_URL;
   if (!workerUrl) return null;
 
   try {
