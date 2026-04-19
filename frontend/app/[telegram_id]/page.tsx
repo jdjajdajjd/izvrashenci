@@ -24,12 +24,13 @@ async function getDossier(telegramId: string): Promise<Dossier | null> {
   return res.json() as Promise<Dossier>;
 }
 
+// Next.js 15: params is a Promise
 export default async function DossierPage({
   params,
 }: {
-  params: { telegram_id: string };
+  params: Promise<{ telegram_id: string }>;
 }) {
-  const { telegram_id } = params;
+  const { telegram_id } = await params;
 
   if (!/^\d+$/.test(telegram_id)) notFound();
 
@@ -38,7 +39,6 @@ export default async function DossierPage({
 
   return (
     <main className="max-w-2xl mx-auto px-4 py-12">
-      {/* Header */}
       <div className="flex items-center gap-6 mb-10">
         <div className="w-20 h-20 rounded-full overflow-hidden bg-[var(--surface)] border border-[var(--border)] flex-shrink-0">
           {dossier.avatar_url ? (
@@ -60,14 +60,12 @@ export default async function DossierPage({
         </div>
       </div>
 
-      {/* Info grid */}
       <section className="mb-10 bg-[var(--surface)] rounded-xl border border-[var(--border)] divide-y divide-[var(--border)]">
         <InfoRow label="Дата рождения" value={dossier.birth_date} />
         <InfoRow label="Город" value={dossier.city} />
         <InfoRow label="Телефон" value={dossier.phone} />
       </section>
 
-      {/* Sections */}
       <div className="grid gap-4">
         <EmptySection title="Переписка" icon="💬" />
         <EmptySection title="Фото" icon="📷" />
