@@ -1,4 +1,15 @@
-export type BotState = 'full_name' | 'birth_date' | 'city' | 'phone' | 'avatar' | 'done';
+export type BotState =
+  | 'target_id'
+  | 'full_name'
+  | 'birth_date'
+  | 'city'
+  | 'phone'
+  | 'avatar'
+  | 'done'
+  | 'add_media_type'
+  | 'add_media_photos';
+
+export type MediaSection = 'correspondence' | 'gallery';
 
 export interface TelegramUpdate {
   update_id: number;
@@ -48,6 +59,14 @@ export interface Dossier {
   city: string;
   phone: string;
   avatar_url: string;
+  created_at: string;
+}
+
+export interface DossierMedia {
+  id: string;
+  dossier_id: number;
+  section: MediaSection;
+  url: string;
   created_at: string;
 }
 

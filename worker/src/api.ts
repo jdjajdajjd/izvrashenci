@@ -15,34 +15,37 @@ function json(body: unknown, status = 200): Response {
 }
 
 export async function handleApiRequest(request: Request, env: Env): Promise<Response> {
-  if (request.method === 'OPTIONS') {
-    return new Response(null, { headers: CORS });
-  }
+  if (request.method === 'OPTIONS') return new Response(null, { headers: CORS });
 
   const url = new URL(request.url);
-  const match = url.pathname.match(/^\/api\/dossier\/(\d+)$/);
 
-  if (!match) {
-    return json({ error: 'Not found' }, 404);
+  // GET /api/dossier/:id
+  const dossierMatch = url.pathname.match(/^\/api\/dossier\/(\d+)$/);
+  if (dossierMatch) {
+    const telegramId = parseInt(dossierMatch[1], 10);
+    const db = new SupabaseClient(env);
+    const dossier = await db.getDossier(telegramId);
+    if (!dossier) return json({ error: 'Dossier not found' }, 404);
+    return json({
+      full_name: dossier.full_name,
+      birth_date: dossier.birth_date,
+      city: dossier.city,
+      phone: dossier.phone,
+      avatar_url: dossier.avatar_url,
+    });
   }
 
-  const telegramId = parseInt(match[1], 10);
-  if (isNaN(telegramId)) {
-    return json({ error: 'Invalid telegram_id' }, 400);
+  // GET /api/dossier/:id/media
+  const mediaMatch = url.pathname.match(/^\/api\/dossier\/(\d+)\/media$/);
+  if (mediaMatch) {
+    const telegramId = parseInt(mediaMatch[1], 10);
+    const db = new SupabaseClient(env);
+    const media = await db.getMedia(telegramId);
+    return json({
+      correspondence: media.filter((m) => m.section === 'correspondence').map((m) => m.url),
+      gallery: media.filter((m) => m.section === 'gallery').map((m) => m.url),
+    });
   }
 
-  const db = new SupabaseClient(env);
-  const dossier = await db.getDossier(telegramId);
-
-  if (!dossier) {
-    return json({ error: 'Dossier not found' }, 404);
-  }
-
-  return json({
-    full_name: dossier.full_name,
-    birth_date: dossier.birth_date,
-    city: dossier.city,
-    phone: dossier.phone,
-    avatar_url: dossier.avatar_url,
-  });
+  return json({ error: 'Not found' }, 404);
 }

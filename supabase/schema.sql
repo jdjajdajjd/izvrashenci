@@ -1,8 +1,7 @@
--- dossier system schema
 -- run in Supabase SQL editor
 
 create table if not exists dossiers (
-  id          bigint primary key,      -- telegram_id
+  id          bigint primary key,
   full_name   text        not null,
   birth_date  text        not null,
   city        text        not null,
@@ -18,26 +17,36 @@ create table if not exists user_sessions (
   updated_at  timestamptz not null default now()
 );
 
--- enable RLS and allow service role full access
-alter table dossiers     enable row level security;
+create table if not exists dossier_media (
+  id          uuid        primary key default gen_random_uuid(),
+  dossier_id  bigint      not null references dossiers(id) on delete cascade,
+  section     text        not null check (section in ('correspondence', 'gallery')),
+  url         text        not null,
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists dossier_media_dossier_id_idx on dossier_media (dossier_id);
+
+-- RLS
+alter table dossiers      enable row level security;
 alter table user_sessions enable row level security;
+alter table dossier_media enable row level security;
 
-create policy "service role full access on dossiers"
-  on dossiers for all
-  using (true)
-  with check (true);
+create policy "service full access dossiers"
+  on dossiers for all using (true) with check (true);
 
-create policy "service role full access on user_sessions"
-  on user_sessions for all
-  using (true)
-  with check (true);
+create policy "service full access sessions"
+  on user_sessions for all using (true) with check (true);
 
--- public read on dossiers (for API)
+create policy "service full access media"
+  on dossier_media for all using (true) with check (true);
+
 create policy "public read dossiers"
-  on dossiers for select
-  using (true);
+  on dossiers for select using (true);
 
--- Storage: create avatars bucket via dashboard or:
--- insert into storage.buckets (id, name, public)
--- values ('avatars', 'avatars', true)
--- on conflict do nothing;
+create policy "public read media"
+  on dossier_media for select using (true);
+
+-- Storage buckets (run separately or via dashboard):
+-- insert into storage.buckets (id, name, public) values ('avatars', 'avatars', true) on conflict do nothing;
+-- insert into storage.buckets (id, name, public) values ('media', 'media', true) on conflict do nothing;

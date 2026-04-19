@@ -1,4 +1,4 @@
-import type { BotState, Dossier, Env, UserSession } from './types';
+import type { BotState, Dossier, DossierMedia, Env, MediaSection, UserSession } from './types';
 
 export class SupabaseClient {
   private readonly url: string;
@@ -34,10 +34,7 @@ export class SupabaseClient {
   ): Promise<void> {
     await fetch(`${this.url}/rest/v1/user_sessions`, {
       method: 'POST',
-      headers: {
-        ...this.headers(),
-        Prefer: 'resolution=merge-duplicates',
-      },
+      headers: { ...this.headers(), Prefer: 'resolution=merge-duplicates' },
       body: JSON.stringify({
         telegram_id: telegramId,
         state,
@@ -63,30 +60,60 @@ export class SupabaseClient {
   ): Promise<void> {
     await fetch(`${this.url}/rest/v1/dossiers`, {
       method: 'POST',
-      headers: {
-        ...this.headers(),
-        Prefer: 'resolution=merge-duplicates',
-      },
+      headers: { ...this.headers(), Prefer: 'resolution=merge-duplicates' },
       body: JSON.stringify({ id: telegramId, ...data }),
     });
   }
 
-  async uploadAvatar(
-    telegramId: number,
-    buffer: ArrayBuffer,
-    contentType: string,
-  ): Promise<string> {
+  async getMedia(telegramId: number): Promise<DossierMedia[]> {
+    const res = await fetch(
+      `${this.url}/rest/v1/dossier_media?dossier_id=eq.${telegramId}&order=created_at.asc&select=*`,
+      { headers: this.headers() },
+    );
+    if (!res.ok) return [];
+    return (await res.json()) as DossierMedia[];
+  }
+
+  async insertMedia(telegramId: number, section: MediaSection, url: string): Promise<void> {
+    await fetch(`${this.url}/rest/v1/dossier_media`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({ dossier_id: telegramId, section, url }),
+    });
+  }
+
+  async uploadAvatar(telegramId: number, buffer: ArrayBuffer): Promise<string> {
     const path = `${telegramId}.jpg`;
     await fetch(`${this.url}/storage/v1/object/avatars/${path}`, {
       method: 'POST',
       headers: {
         apikey: this.key,
         Authorization: `Bearer ${this.key}`,
-        'Content-Type': contentType,
+        'Content-Type': 'image/jpeg',
         'x-upsert': 'true',
       },
       body: buffer,
     });
     return `${this.url}/storage/v1/object/public/avatars/${path}`;
+  }
+
+  async uploadMedia(
+    telegramId: number,
+    section: MediaSection,
+    buffer: ArrayBuffer,
+    uuid: string,
+  ): Promise<string> {
+    const path = `${telegramId}/${section}/${uuid}.jpg`;
+    await fetch(`${this.url}/storage/v1/object/media/${path}`, {
+      method: 'POST',
+      headers: {
+        apikey: this.key,
+        Authorization: `Bearer ${this.key}`,
+        'Content-Type': 'image/jpeg',
+        'x-upsert': 'true',
+      },
+      body: buffer,
+    });
+    return `${this.url}/storage/v1/object/public/media/${path}`;
   }
 }
