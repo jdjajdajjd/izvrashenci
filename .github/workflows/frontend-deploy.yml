@@ -28,6 +28,15 @@ jobs:
         env:
           NEXT_PUBLIC_WORKER_URL: ${{ secrets.WORKER_URL }}
 
+      - name: Create Pages project (first run only)
+        run: |
+          npx wrangler pages project create dossier-frontend \
+            --production-branch main || true
+        working-directory: frontend
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
       - name: Deploy to Cloudflare Pages
         run: |
           npx wrangler pages deploy .vercel/output/static \
