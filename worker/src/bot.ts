@@ -1,57 +1,53 @@
 import { SupabaseClient } from './supabase';
-import type { BotState, Env, MediaSection, TelegramUpdate } from './types';
+import type { BotState, Env, InlineKeyboard, MediaSection, TelegramUpdate } from './types';
 
-const PROMPTS: Record<BotState, string> = {
-  target_id:
-    '🎯 Введите Telegram ID человека, на которого создаётся досье:',
-  full_name: '👤 Введите ФИО:',
-  birth_date: '📅 Введите дату рождения (ДД.ММ.ГГГГ):',
-  city: '🏙️ Введите город:',
-  phone: '📞 Введите номер телефона:',
-  avatar: '🖼️ Отправьте фотографию:',
-  done: '✅ Готово.',
-  add_media_type:
-    '📁 Выберите раздел:\n\n1 — Переписка\n2 — Фото\n\nОтправьте 1 или 2:',
-  add_media_photos:
-    '📸 Отправляйте фотографии по одной.\n/done — завершить загрузку.',
+// ─── Keyboards ────────────────────────────────────────────────────────────────
+
+const KB_MAIN: InlineKeyboard = {
+  inline_keyboard: [
+    [{ text: '📋 Создать досье', callback_data: 'create' }],
+    [{ text: '📸 Добавить фото к досье', callback_data: 'add_photo' }],
+  ],
 };
 
-const QUESTIONNAIRE: BotState[] = [
-  'target_id',
-  'full_name',
-  'birth_date',
-  'city',
-  'phone',
-  'avatar',
-  'done',
-];
+const KB_SECTION: InlineKeyboard = {
+  inline_keyboard: [
+    [
+      { text: '💬 Переписка', callback_data: 'section:correspondence' },
+      { text: '📷 Галерея', callback_data: 'section:gallery' },
+    ],
+  ],
+};
+
+const KB_DONE: InlineKeyboard = {
+  inline_keyboard: [[{ text: '✅ Завершить загрузку', callback_data: 'media_done' }]],
+};
+
+// ─── Validation ───────────────────────────────────────────────────────────────
 
 function validate(state: BotState, value: string): string | null {
   const v = value.trim();
   switch (state) {
     case 'target_id':
+    case 'add_media_id':
       if (!/^\d{5,12}$/.test(v))
-        return '❗ Telegram ID — это число (5–12 цифр). Попробуйте снова:';
+        return '❗ Telegram ID — число (5–12 цифр). Попробуйте снова:';
       return null;
     case 'full_name':
-      if (/^\d+$/.test(v))
-        return '❗ ФИО не может состоять только из цифр. Введите ФИО:';
-      if (v.length < 2)
-        return '❗ ФИО слишком короткое. Введите ФИО:';
+      if (/^\d+$/.test(v)) return '❗ ФИО не может состоять из цифр. Введите ФИО:';
+      if (v.length < 2) return '❗ ФИО слишком короткое. Введите ФИО:';
       return null;
     case 'birth_date':
       if (!/^\d{2}\.\d{2}\.\d{4}$/.test(v))
-        return '❗ Неверный формат. Введите дату в формате ДД.ММ.ГГГГ:';
+        return '❗ Неверный формат. Введите дату ДД.ММ.ГГГГ:';
       return null;
     case 'city':
-      if (/^\d+$/.test(v))
-        return '❗ Город не может быть числом. Введите название города:';
-      if (v.length < 2)
-        return '❗ Название города слишком короткое. Введите город:';
+      if (/^\d+$/.test(v)) return '❗ Город не может быть числом. Введите город:';
+      if (v.length < 2) return '❗ Слишком короткое. Введите город:';
       return null;
     case 'phone':
       if (!/^[\+\d][\d\s\-\(\)]{6,17}$/.test(v))
-        return '❗ Неверный формат телефона. Пример: +79001234567. Введите снова:';
+        return '❗ Неверный формат. Пример: +79001234567. Введите снова:';
       return null;
     default:
       return null;
@@ -66,76 +62,117 @@ const FIELD_MAP: Partial<Record<BotState, string>> = {
   phone: 'phone',
 };
 
-export async function handleUpdate(update: TelegramUpdate, env: Env): Promise<void> {
-  const message = update.message;
-  if (!message?.from) return;
+const NEXT_STATE: Partial<Record<BotState, BotState>> = {
+  target_id: 'full_name',
+  full_name: 'birth_date',
+  birth_date: 'city',
+  city: 'phone',
+  phone: 'avatar',
+};
 
-  const operatorId = message.from.id;
-  const chatId = message.chat.id;
+const PROMPTS: Record<string, string> = {
+  target_id: '🎯 Введите Telegram ID человека, на которого создаётся досье:',
+  full_name: '👤 Введите ФИО:',
+  birth_date: '📅 Введите дату рождения (ДД.ММ.ГГГГ):',
+  city: '🏙️ Введите город:',
+  phone: '📞 Введите номер телефона:',
+  avatar: '🖼️ Отправьте фотографию для аватара:',
+  add_media_id: '🎯 Введите Telegram ID досье, к которому добавляем фото:',
+  add_media_photos: '📸 Отправляйте фотографии. Нажмите кнопку когда закончите.',
+};
+
+// ─── Main handler ─────────────────────────────────────────────────────────────
+
+export async function handleUpdate(update: TelegramUpdate, env: Env): Promise<void> {
   const db = new SupabaseClient(env);
   const token = env.TELEGRAM_BOT_TOKEN;
 
-  // /start — начать новое досье
-  if (message.text === '/start') {
-    await db.upsertSession(operatorId, 'target_id', {});
+  if (update.callback_query) {
+    await handleCallback(update.callback_query, db, token, env);
+    return;
+  }
+
+  if (update.message) {
+    await handleMessage(update.message, db, token, env);
+  }
+}
+
+// ─── Callback handler ─────────────────────────────────────────────────────────
+
+async function handleCallback(
+  cq: NonNullable<TelegramUpdate['callback_query']>,
+  db: SupabaseClient,
+  token: string,
+  env: Env,
+): Promise<void> {
+  const userId = cq.from.id;
+  const chatId = cq.message?.chat.id ?? userId;
+  const data = cq.data ?? '';
+
+  await answerCallback(token, cq.id);
+
+  if (data === 'create') {
+    await db.upsertSession(userId, 'target_id', {});
     await send(token, chatId, PROMPTS.target_id);
     return;
   }
 
-  // /add — добавить медиа к существующему досье
-  if (message.text?.startsWith('/add')) {
-    const parts = message.text.split(' ');
-    const targetId = parts[1];
-    if (!targetId || !/^\d+$/.test(targetId)) {
-      await send(token, chatId, '❗ Укажите Telegram ID: /add 778851427');
-      return;
-    }
-    const dossier = await db.getDossier(parseInt(targetId, 10));
-    if (!dossier) {
-      await send(token, chatId, `❗ Досье с ID ${targetId} не найдено.`);
-      return;
-    }
-    await db.upsertSession(operatorId, 'add_media_type', { target_id: targetId });
-    await send(token, chatId, PROMPTS.add_media_type);
+  if (data === 'add_photo') {
+    await db.upsertSession(userId, 'add_media_id', {});
+    await send(token, chatId, PROMPTS.add_media_id);
     return;
   }
 
-  // /done — завершить загрузку медиа
-  if (message.text === '/done') {
-    const session = await db.getSession(operatorId);
-    if (session?.state === 'add_media_photos') {
-      const targetId = parseInt(session.temp_data.target_id, 10);
-      await db.upsertSession(operatorId, 'done', session.temp_data);
-      const link = `https://${env.PAGES_DOMAIN}/${targetId}`;
-      await send(token, chatId, `✅ Фотографии добавлены.\n\n🔗 ${link}`);
-    }
+  if (data.startsWith('section:')) {
+    const section = data.split(':')[1] as MediaSection;
+    const session = await db.getSession(userId);
+    if (!session) return;
+    session.temp_data.media_section = section;
+    await db.upsertSession(userId, 'add_media_photos', session.temp_data);
+    await send(token, chatId, PROMPTS.add_media_photos, KB_DONE);
     return;
   }
 
-  const session = await db.getSession(operatorId);
-  if (!session) {
-    await send(token, chatId, 'Отправьте /start для начала.');
+  if (data === 'media_done') {
+    const session = await db.getSession(userId);
+    if (!session) return;
+    const targetId = parseInt(session.temp_data.target_id, 10);
+    await db.upsertSession(userId, 'done', session.temp_data);
+    const link = `https://${env.PAGES_DOMAIN}/${targetId}`;
+    await send(token, chatId, `✅ Фотографии добавлены!\n\n🔗 ${link}`, KB_MAIN);
+    return;
+  }
+}
+
+// ─── Message handler ──────────────────────────────────────────────────────────
+
+async function handleMessage(
+  message: NonNullable<TelegramUpdate['message']>,
+  db: SupabaseClient,
+  token: string,
+  env: Env,
+): Promise<void> {
+  const userId = message.from.id;
+  const chatId = message.chat.id;
+
+  if (message.text === '/start') {
+    await db.upsertSession(userId, 'idle', {});
+    await send(token, chatId, '👋 Добро пожаловать!\n\nВыберите действие:', KB_MAIN);
+    return;
+  }
+
+  const session = await db.getSession(userId);
+  if (!session || session.state === 'idle' || session.state === 'done') {
+    await send(token, chatId, 'Выберите действие:', KB_MAIN);
     return;
   }
 
   const { state, temp_data } = session;
 
-  // --- Добавление медиа ---
-  if (state === 'add_media_type') {
-    if (message.text !== '1' && message.text !== '2') {
-      await send(token, chatId, '❗ Отправьте 1 (Переписка) или 2 (Фото):');
-      return;
-    }
-    const section: MediaSection = message.text === '1' ? 'correspondence' : 'gallery';
-    temp_data.media_section = section;
-    await db.upsertSession(operatorId, 'add_media_photos', temp_data);
-    await send(token, chatId, PROMPTS.add_media_photos);
-    return;
-  }
-
+  // ── Загрузка медиафото ──
   if (state === 'add_media_photos') {
     if (!message.photo?.length) {
-      await send(token, chatId, '❗ Отправьте фотографию или /done для завершения.');
+      await send(token, chatId, '❗ Отправьте фотографию.', KB_DONE);
       return;
     }
     const targetId = parseInt(temp_data.target_id, 10);
@@ -145,19 +182,28 @@ export async function handleUpdate(update: TelegramUpdate, env: Env): Promise<vo
     const buffer = await downloadPhoto(token, photo.file_id);
     const url = await db.uploadMedia(targetId, section, buffer, uuid);
     await db.insertMedia(targetId, section, url);
-    await send(token, chatId, '✅ Фото добавлено. Отправьте ещё или /done.');
+    await send(token, chatId, '✅ Фото добавлено. Отправьте ещё или завершите.', KB_DONE);
     return;
   }
 
-  // --- Основная анкета ---
-  if (state === 'done') {
-    await send(token, chatId, 'Досье уже создано. /start — новое, /add <ID> — добавить фото.');
+  // ── ID для добавления медиа ──
+  if (state === 'add_media_id') {
+    if (!message.text) { await send(token, chatId, PROMPTS.add_media_id); return; }
+    const err = validate(state, message.text);
+    if (err) { await send(token, chatId, err); return; }
+    const targetId = parseInt(message.text.trim(), 10);
+    const dossier = await db.getDossier(targetId);
+    if (!dossier) {
+      await send(token, chatId, `❗ Досье с ID ${targetId} не найдено. Введите другой ID:`);
+      return;
+    }
+    temp_data.target_id = String(targetId);
+    await db.upsertSession(userId, 'add_media_type', temp_data);
+    await send(token, chatId, `📁 Досье: *${dossier.full_name}*\n\nВыберите раздел:`, KB_SECTION);
     return;
   }
 
-  const currentIndex = QUESTIONNAIRE.indexOf(state);
-  const nextState = QUESTIONNAIRE[currentIndex + 1] as BotState;
-
+  // ── Аватар ──
   if (state === 'avatar') {
     if (!message.photo?.length) {
       await send(token, chatId, '❗ Пожалуйста, отправьте фотографию.');
@@ -167,8 +213,6 @@ export async function handleUpdate(update: TelegramUpdate, env: Env): Promise<vo
     const photo = message.photo[message.photo.length - 1];
     const buffer = await downloadPhoto(token, photo.file_id);
     const avatarUrl = await db.uploadAvatar(targetId, buffer);
-    temp_data.avatar_url = avatarUrl;
-
     await db.upsertDossier(targetId, {
       full_name: temp_data.full_name ?? '',
       birth_date: temp_data.birth_date ?? '',
@@ -176,46 +220,64 @@ export async function handleUpdate(update: TelegramUpdate, env: Env): Promise<vo
       phone: temp_data.phone ?? '',
       avatar_url: avatarUrl,
     });
-    await db.upsertSession(operatorId, 'done', temp_data);
-
+    await db.upsertSession(userId, 'done', temp_data);
     const link = `https://${env.PAGES_DOMAIN}/${targetId}`;
-    await send(token, chatId, `✅ Досье создано!\n\n🔗 ${link}`);
+    await send(token, chatId, `✅ Досье создано!\n\n🔗 ${link}`, KB_MAIN);
     return;
   }
 
+  // ── Текстовые поля анкеты ──
   if (!message.text) {
-    await send(token, chatId, '❗ Пожалуйста, введите текст.');
+    await send(token, chatId, '❗ Введите текст.');
     return;
   }
 
-  const error = validate(state, message.text);
-  if (error) {
-    await send(token, chatId, error);
-    return;
-  }
+  const err = validate(state, message.text);
+  if (err) { await send(token, chatId, err); return; }
 
   const field = FIELD_MAP[state];
   if (field) temp_data[field] = message.text.trim();
 
-  await db.upsertSession(operatorId, nextState, temp_data);
-  await send(token, chatId, PROMPTS[nextState]);
+  const next = NEXT_STATE[state];
+  if (!next) return;
+
+  await db.upsertSession(userId, next, temp_data);
+  await send(token, chatId, PROMPTS[next]);
 }
 
-async function downloadPhoto(token: string, fileId: string): Promise<ArrayBuffer> {
-  const fileRes = await fetch(
-    `https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`,
-  );
-  const fileData = (await fileRes.json()) as { result: { file_path: string } };
-  const photoRes = await fetch(
-    `https://api.telegram.org/file/bot${token}/${fileData.result.file_path}`,
-  );
-  return photoRes.arrayBuffer();
-}
+// ─── Telegram helpers ─────────────────────────────────────────────────────────
 
-async function send(token: string, chatId: number, text: string): Promise<void> {
+async function send(
+  token: string,
+  chatId: number,
+  text: string,
+  keyboard?: InlineKeyboard,
+): Promise<void> {
   await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text }),
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      parse_mode: 'Markdown',
+      ...(keyboard ? { reply_markup: keyboard } : {}),
+    }),
   });
+}
+
+async function answerCallback(token: string, callbackQueryId: string): Promise<void> {
+  await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ callback_query_id: callbackQueryId }),
+  });
+}
+
+async function downloadPhoto(token: string, fileId: string): Promise<ArrayBuffer> {
+  const res = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`);
+  const data = (await res.json()) as { result: { file_path: string } };
+  const photo = await fetch(
+    `https://api.telegram.org/file/bot${token}/${data.result.file_path}`,
+  );
+  return photo.arrayBuffer();
 }

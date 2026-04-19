@@ -1,4 +1,5 @@
 export type BotState =
+  | 'idle'
   | 'target_id'
   | 'full_name'
   | 'birth_date'
@@ -6,6 +7,7 @@ export type BotState =
   | 'phone'
   | 'avatar'
   | 'done'
+  | 'add_media_id'
   | 'add_media_type'
   | 'add_media_photos';
 
@@ -14,6 +16,14 @@ export type MediaSection = 'correspondence' | 'gallery';
 export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
+  callback_query?: TelegramCallbackQuery;
+}
+
+export interface TelegramCallbackQuery {
+  id: string;
+  from: TelegramUser;
+  message?: TelegramMessage;
+  data?: string;
 }
 
 export interface TelegramMessage {
@@ -43,6 +53,15 @@ export interface TelegramPhotoSize {
   width: number;
   height: number;
   file_size?: number;
+}
+
+export interface InlineKeyboard {
+  inline_keyboard: InlineButton[][];
+}
+
+export interface InlineButton {
+  text: string;
+  callback_data: string;
 }
 
 export interface UserSession {
