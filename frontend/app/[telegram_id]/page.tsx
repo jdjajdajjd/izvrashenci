@@ -12,19 +12,19 @@ interface Dossier {
 
 async function getDossier(telegramId: string): Promise<Dossier | null> {
   const workerUrl = process.env.NEXT_PUBLIC_WORKER_URL;
-  if (!workerUrl) throw new Error('NEXT_PUBLIC_WORKER_URL is not set');
+  if (!workerUrl) return null;
 
-  const res = await fetch(`${workerUrl}/api/dossier/${telegramId}`, {
-    cache: 'no-store',
-  });
-
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
-
-  return res.json() as Promise<Dossier>;
+  try {
+    const res = await fetch(`${workerUrl}/api/dossier/${telegramId}`, {
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    return res.json() as Promise<Dossier>;
+  } catch {
+    return null;
+  }
 }
 
-// Next.js 15: params is a Promise
 export default async function DossierPage({
   params,
 }: {
