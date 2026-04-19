@@ -1,0 +1,10 @@
+name = "dossier-worker"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# Secrets are set via `wrangler secret put` or CI/CD:
+# SUPABASE_URL
+# SUPABASE_KEY
+# TELEGRAM_BOT_TOKEN
+# PAGES_DOMAIN

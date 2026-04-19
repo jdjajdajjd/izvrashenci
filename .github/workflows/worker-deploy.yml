@@ -1,0 +1,47 @@
+name: Deploy Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/**'
+      - '.github/workflows/worker-deploy.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy Cloudflare Worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: worker/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: worker
+
+      - name: Deploy worker
+        run: npx wrangler deploy
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Sync secrets
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          PAGES_DOMAIN: ${{ secrets.PAGES_DOMAIN }}
+        run: |
+          printf '%s' "$SUPABASE_URL"        | npx wrangler secret put SUPABASE_URL
+          printf '%s' "$SUPABASE_KEY"        | npx wrangler secret put SUPABASE_KEY
+          printf '%s' "$TELEGRAM_BOT_TOKEN"  | npx wrangler secret put TELEGRAM_BOT_TOKEN
+          printf '%s' "$PAGES_DOMAIN"        | npx wrangler secret put PAGES_DOMAIN
