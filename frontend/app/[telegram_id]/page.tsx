@@ -11,8 +11,8 @@ interface Dossier {
 }
 
 async function getDossier(telegramId: string): Promise<Dossier | null> {
-  const workerUrl = process.env.WORKER_URL;
-  if (!workerUrl) return null;
+  const workerUrl =
+    process.env.WORKER_URL ?? 'https://dossier-worker.qsenseeee.workers.dev';
 
   try {
     const res = await fetch(`${workerUrl}/api/dossier/${telegramId}`, {
