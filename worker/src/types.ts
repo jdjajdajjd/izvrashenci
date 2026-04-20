@@ -137,6 +137,40 @@ export interface DossierMedia {
   created_at: string;
 }
 
+export interface InfoStructured {
+  // Адреса
+  address_1?: string;
+  address_2?: string;
+  address_3?: string;
+  registration?: string;
+  // Документы
+  passport?: string;
+  passport_2?: string;
+  snils?: string;
+  inn?: string;
+  driver_license?: string;
+  driver_license_expiry?: string;
+  // Транспорт
+  car?: string;
+  car_vin?: string;
+  // Контакты
+  phones?: string;
+  email?: string;
+  ip?: string;
+  country?: string;
+  // Соцсети
+  vk?: string;
+  telegram?: string;
+  tiktok?: string;
+  social_media?: string;
+  // Работа / бизнес
+  work?: string;
+  inn_ip?: string;
+  // Прочее
+  birthplace?: string;
+  other?: string;
+}
+
 export interface ParsedReport {
   full_name?: string;
   birth_date?: string;
@@ -145,6 +179,7 @@ export interface ParsedReport {
   username?: string;
   suspected_of?: string;
   info_text?: string;
+  info?: InfoStructured;
   relatives?: Relatives;
 }
 

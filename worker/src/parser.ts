@@ -192,6 +192,57 @@ async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
   return chunks.join('\n');
 }
 
+// ─── Structured TXT preprocessor ─────────────────────────────────────────────
+
+/**
+ * For structured .txt reports (with === Section === headers), extract only the
+ * most informative sections so the AI prompt stays compact.
+ */
+export function extractKeyTxtSections(text: string): string {
+  if (!text.includes('===')) return text;
+
+  // Find all section positions
+  const re = /^=== (.+) ===$/gm;
+  const positions: Array<{ header: string; start: number; end: number }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    positions.push({ header: m[1], start: m.index, end: 0 });
+  }
+  if (!positions.length) return text;
+  for (let i = 0; i < positions.length; i++) {
+    positions[i].end = i + 1 < positions.length ? positions[i + 1].start : text.length;
+  }
+
+  const ALWAYS: RegExp[] = [
+    /Общая сводка/,
+    /gosuslugi/i,
+    /учет МВД/i,
+    /Население России/,
+    /Вконтакте/,
+    /Telegram/,
+    /TikTok/i,
+    /Водительские права/,
+    /Возможные связи/,
+    /Аффилированн/,
+    /Телефонные книги/,
+    /Мобильный банк/,
+  ];
+  const FIRST_ONLY = /ОСАГО|Социальный фонд|Доходы физлиц|Результат ПЦР/;
+
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const pos of positions) {
+    const body = text.slice(pos.start, pos.end).trim();
+    if (ALWAYS.some((r) => r.test(pos.header))) { result.push(body); continue; }
+    const key = pos.header.replace(/\s*\d{4}\s*/, '').trim();
+    if (FIRST_ONLY.test(pos.header) && !seen.has(key)) { seen.add(key); result.push(body); }
+  }
+
+  const out = result.join('\n\n');
+  return out || text.slice(0, 12000);
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /** Extract raw text from a file (PDF or plain text). */
