@@ -454,20 +454,25 @@ async function handleMessage(
     const patch: Record<string, unknown> = {};
     const applied: string[] = [];
 
-    if (parsed.full_name)       { patch.full_name    = parsed.full_name;    applied.push(`👤 ФИО: ${parsed.full_name}`); }
-    if (parsed.birth_date)      { patch.birth_date   = parsed.birth_date;   applied.push(`📅 Дата: ${parsed.birth_date}`); }
-    if (parsed.city)            { patch.city         = parsed.city;         applied.push(`🏙️ Город: ${parsed.city}`); }
-    if (parsed.phone)           { patch.phone        = parsed.phone;        applied.push(`📞 Телефон: ${parsed.phone}`); }
-    if (parsed.username)        { patch.username     = parsed.username;     applied.push(`@ Username: ${parsed.username}`); }
-    if (parsed.suspected_of)    { patch.suspected_of = parsed.suspected_of; applied.push(`🔴 Подозревается: ${parsed.suspected_of}`); }
-    if (parsed.info_text)       { patch.info_text    = parsed.info_text;    applied.push(`ℹ️ Информация: сохранена`); }
+    if (parsed.full_name)    { patch.full_name    = parsed.full_name;    applied.push(`👤 ФИО: ${parsed.full_name}`); }
+    if (parsed.birth_date)   { patch.birth_date   = parsed.birth_date;   applied.push(`📅 Дата: ${parsed.birth_date}`); }
+    if (parsed.city)         { patch.city         = parsed.city;         applied.push(`🏙️ Город: ${parsed.city}`); }
+    if (parsed.phone)        { patch.phone        = parsed.phone;        applied.push(`📞 Телефон: ${parsed.phone}`); }
+    if (parsed.username)     { patch.username     = parsed.username;     applied.push(`@ Username: ${parsed.username}`); }
+    if (parsed.suspected_of) { patch.suspected_of = parsed.suspected_of; applied.push(`🔴 Подозревается: ${parsed.suspected_of}`); }
+
+    // Always overwrite info_text — clears old garbage if parser found nothing extra
+    patch.info_text = parsed.info_text ?? '';
+    if (parsed.info_text) applied.push(`ℹ️ Информация: сохранена`);
+
     if (parsed.relatives && Object.keys(parsed.relatives).length) {
       const d = await db.getDossier(dossierId);
       patch.relatives = { ...(d?.relatives ?? {}), ...parsed.relatives };
       applied.push(`🧬 Родственники: ${Object.keys(parsed.relatives).length} записей`);
     }
 
-    if (Object.keys(patch).length === 0) {
+    // Nothing useful found at all (only info_text was set to '')
+    if (applied.length === 0) {
       await edit(token, chatId, pmid, '⚠️ Не удалось распознать поля в файле.\n\nПопробуйте другой формат.', kbCancel(dossierId)); return;
     }
 
