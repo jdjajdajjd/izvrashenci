@@ -137,6 +137,24 @@ export interface DossierMedia {
   created_at: string;
 }
 
+export interface InfoStructured {
+  address_1?: string;
+  address_2?: string;
+  address_3?: string;
+  registration?: string;
+  passport?: string;
+  snils?: string;
+  inn?: string;
+  car?: string;
+  social_media?: string;
+  email?: string;
+  ip?: string;
+  country?: string;
+  driver_license?: string;
+  birthplace?: string;
+  other?: string;
+}
+
 export interface ParsedReport {
   full_name?: string;
   birth_date?: string;
@@ -145,6 +163,7 @@ export interface ParsedReport {
   username?: string;
   suspected_of?: string;
   info_text?: string;
+  info?: InfoStructured;
   relatives?: Relatives;
 }
 

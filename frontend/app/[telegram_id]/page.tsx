@@ -15,6 +15,36 @@ interface Relatives {
   grandpa_1?: string; grandpa_2?: string;
 }
 
+interface InfoStructured {
+  address_1?: string; address_2?: string; address_3?: string;
+  registration?: string; passport?: string; snils?: string; inn?: string;
+  car?: string; social_media?: string; email?: string; ip?: string;
+  country?: string; driver_license?: string; birthplace?: string; other?: string;
+}
+
+const INFO_LABELS: Array<[keyof InfoStructured, string]> = [
+  ['address_1',     'Адрес'],
+  ['address_2',     'Адрес 2'],
+  ['address_3',     'Адрес 3'],
+  ['registration',  'Прописка'],
+  ['passport',      'Паспорт'],
+  ['snils',         'СНИЛС'],
+  ['inn',           'ИНН'],
+  ['car',           'Авто'],
+  ['social_media',  'Соцсети'],
+  ['email',         'Email'],
+  ['ip',            'IP-адрес'],
+  ['country',       'Страна'],
+  ['driver_license','Вод. удостоверение'],
+  ['birthplace',    'Место рождения'],
+  ['other',         'Прочее'],
+];
+
+function parseInfoText(raw: string): InfoStructured | null {
+  if (!raw || !raw.trim().startsWith('{')) return null;
+  try { return JSON.parse(raw) as InfoStructured; } catch { return null; }
+}
+
 interface Dossier {
   full_name: string;
   birth_date: string;
@@ -154,14 +184,38 @@ export default function DossierPage() {
         </section>
 
         {/* Информация */}
-        {visible('info') && dossier.info_text && (
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 mb-4">
-            <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
-              <span>ℹ️</span><span>Информация</span>
-            </h2>
-            <pre className="text-xs text-[var(--muted)] whitespace-pre-wrap font-mono leading-relaxed">{dossier.info_text}</pre>
-          </div>
-        )}
+        {visible('info') && dossier.info_text && (() => {
+          const structured = parseInfoText(dossier.info_text);
+          if (structured) {
+            const rows = INFO_LABELS.filter(([k]) => structured[k]);
+            if (!rows.length) return null;
+            return (
+              <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl mb-4 overflow-hidden">
+                <div className="px-5 py-4 border-b border-[var(--border)]">
+                  <h2 className="text-sm font-semibold flex items-center gap-2">
+                    <span>ℹ️</span><span>Информация</span>
+                  </h2>
+                </div>
+                <div className="divide-y divide-[var(--border)]">
+                  {rows.map(([k, label]) => (
+                    <div key={k} className="flex gap-4 px-5 py-3">
+                      <span className="text-xs text-[var(--muted)] w-36 flex-shrink-0 pt-0.5">{label}</span>
+                      <span className="text-xs break-all">{structured[k]}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+          return (
+            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 mb-4">
+              <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                <span>ℹ️</span><span>Информация</span>
+              </h2>
+              <pre className="text-xs text-[var(--muted)] whitespace-pre-wrap font-mono leading-relaxed">{dossier.info_text}</pre>
+            </div>
+          );
+        })()}
 
         {/* Родственники */}
         {visible('relatives') && relEntries.length > 0 && (

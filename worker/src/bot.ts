@@ -485,8 +485,13 @@ async function handleMessage(
     if (parsed.suspected_of) { patch.suspected_of = parsed.suspected_of; applied.push(`🔴 Подозревается: ${parsed.suspected_of}`); }
 
     // Always overwrite info_text — clears old garbage if parser found nothing extra
-    patch.info_text = parsed.info_text ?? '';
-    if (parsed.info_text) applied.push(`ℹ️ Информация: сохранена`);
+    if (parsed.info) {
+      patch.info_text = JSON.stringify(parsed.info);
+      applied.push(`ℹ️ Информация: сохранена`);
+    } else {
+      patch.info_text = parsed.info_text ?? '';
+      if (parsed.info_text) applied.push(`ℹ️ Информация: сохранена`);
+    }
 
     if (parsed.relatives && Object.keys(parsed.relatives).length) {
       const d = await db.getDossier(dossierId);
