@@ -1,4 +1,4 @@
-create table if not exists dossiers (id bigint primary key, full_name text not null, birth_date text not null, city text not null, phone text not null, avatar_url text not null default '', created_at timestamptz not null default now());
+create table if not exists dossiers (id bigint primary key, full_name text not null, birth_date text not null, city text not null, phone text not null, avatar_url text not null default '', info_text text not null default '', hidden_sections jsonb not null default '[]', created_at timestamptz not null default now());
 
 create table if not exists user_sessions (telegram_id bigint primary key, state text not null, temp_data jsonb not null default '{}', updated_at timestamptz not null default now());
 
@@ -24,4 +24,6 @@ create policy "service full access media" on dossier_media for all using (true) 
 create policy "public read dossiers" on dossiers for select using (true);
 create policy "public read media" on dossier_media for select using (true);
 
+alter table dossiers add column if not exists info_text text not null default '';
+alter table dossiers add column if not exists hidden_sections jsonb not null default '[]';
 alter table dossier_media add column if not exists media_type text not null default 'image' check (media_type in ('image', 'video'));

@@ -7,9 +7,9 @@ export type BotState =
   | 'phone'
   | 'avatar'
   | 'done'
-  | 'add_media_id'
-  | 'add_media_type'
-  | 'add_media_photos';
+  | 'add_media_photos'
+  | 'edit_field'
+  | 'add_info';
 
 export type MediaSection = 'correspondence' | 'gallery';
 export type MediaType = 'image' | 'video';
@@ -25,6 +25,14 @@ export interface TelegramCallbackQuery {
   from: TelegramUser;
   message?: TelegramMessage;
   data?: string;
+}
+
+export interface TelegramDocument {
+  file_id: string;
+  file_unique_id: string;
+  mime_type?: string;
+  file_size?: number;
+  file_name?: string;
 }
 
 export interface TelegramVideo {
@@ -45,6 +53,7 @@ export interface TelegramMessage {
   text?: string;
   photo?: TelegramPhotoSize[];
   video?: TelegramVideo;
+  document?: TelegramDocument;
 }
 
 export interface TelegramUser {
@@ -90,6 +99,8 @@ export interface Dossier {
   city: string;
   phone: string;
   avatar_url: string;
+  info_text: string;
+  hidden_sections: string[];
   created_at: string;
 }
 

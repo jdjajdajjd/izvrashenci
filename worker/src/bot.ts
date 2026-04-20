@@ -1,291 +1,364 @@
 import { SupabaseClient } from './supabase';
 import type { BotState, Env, InlineKeyboard, MediaSection, MediaType, TelegramUpdate } from './types';
 
-// ─── Keyboards ────────────────────────────────────────────────────────────────
+// ─── Section config ────────────────────────────────────────────────────────────
+
+const SECTIONS = [
+  { code: 'correspondence', label: '💬 Переписка' },
+  { code: 'gallery',        label: '🎞️ Медиа' },
+  { code: 'info',           label: 'ℹ️ Информация' },
+  { code: 'vk_friends',    label: '👥 Друзья из ВК' },
+  { code: 'relatives',     label: '🧬 Родственники' },
+] as const;
+
+// ─── Keyboards ─────────────────────────────────────────────────────────────────
 
 const KB_MAIN: InlineKeyboard = {
   inline_keyboard: [
     [{ text: '📋 Создать досье', callback_data: 'create' }],
-    [{ text: '📸 Добавить фото к досье', callback_data: 'add_photo' }],
+    [{ text: '📁 Все досье',    callback_data: 'lst' }],
   ],
 };
 
-const KB_SECTION: InlineKeyboard = {
+const kbView = (id: number): InlineKeyboard => ({
   inline_keyboard: [
-    [
-      { text: '💬 Переписка', callback_data: 'section:correspondence' },
-      { text: '📷 Галерея', callback_data: 'section:gallery' },
-    ],
+    [{ text: '✏️ Редактировать', callback_data: `e:${id}` }, { text: '📸 Добавить медиа', callback_data: `am:${id}` }],
+    [{ text: '👁 Разделы',      callback_data: `sec:${id}` }, { text: '📝 Информация',    callback_data: `inf:${id}` }],
+    [{ text: '🔗 Открыть страницу', callback_data: `link:${id}` }],
+    [{ text: '⬅️ К списку',    callback_data: 'lst' }],
   ],
+});
+
+const kbEdit = (id: number): InlineKeyboard => ({
+  inline_keyboard: [
+    [{ text: '👤 ФИО',          callback_data: `ef:${id}:fn` }, { text: '📅 Дата',    callback_data: `ef:${id}:bd` }],
+    [{ text: '🏙️ Город',        callback_data: `ef:${id}:ct` }, { text: '📞 Телефон', callback_data: `ef:${id}:ph` }],
+    [{ text: '🖼️ Аватар',       callback_data: `ef:${id}:av` }],
+    [{ text: '⬅️ Назад',        callback_data: `v:${id}` }],
+  ],
+});
+
+const kbSections = (id: number, hidden: string[]): InlineKeyboard => ({
+  inline_keyboard: [
+    ...SECTIONS.map((s) => [{ text: `${s.label} ${hidden.includes(s.code) ? '❌' : '✅'}`, callback_data: `ts:${id}:${s.code}` }]),
+    [{ text: '⬅️ Назад', callback_data: `v:${id}` }],
+  ],
+});
+
+const kbMediaSection = (id: number): InlineKeyboard => ({
+  inline_keyboard: [
+    [{ text: '💬 Переписка', callback_data: `ms:${id}:cr` }, { text: '🎞️ Медиа', callback_data: `ms:${id}:gl` }],
+    [{ text: '⬅️ Назад', callback_data: `v:${id}` }],
+  ],
+});
+
+const kbDone = (id: number): InlineKeyboard => ({
+  inline_keyboard: [[{ text: '✅ Завершить загрузку', callback_data: `md:${id}` }]],
+});
+
+// ─── Field map ─────────────────────────────────────────────────────────────────
+
+const FIELDS: Record<string, { db: string; prompt: string; photo?: true }> = {
+  fn: { db: 'full_name',  prompt: '👤 Введите новое ФИО:' },
+  bd: { db: 'birth_date', prompt: '📅 Введите дату рождения (ДД.ММ.ГГГГ):' },
+  ct: { db: 'city',       prompt: '🏙️ Введите город:' },
+  ph: { db: 'phone',      prompt: '📞 Введите телефон:' },
+  av: { db: 'avatar_url', prompt: '🖼️ Отправьте новое фото аватара:', photo: true },
 };
 
-const KB_DONE: InlineKeyboard = {
-  inline_keyboard: [[{ text: '✅ Завершить загрузку', callback_data: 'media_done' }]],
-};
+// ─── Validation ────────────────────────────────────────────────────────────────
 
-// ─── Validation ───────────────────────────────────────────────────────────────
-
-function validate(state: BotState, value: string): string | null {
+function validate(field: string, value: string): string | null {
   const v = value.trim();
-  switch (state) {
-    case 'target_id':
-    case 'add_media_id':
-      if (!/^\d{5,12}$/.test(v))
-        return '❗ Telegram ID — число (5–12 цифр). Попробуйте снова:';
-      return null;
-    case 'full_name':
-      if (/^\d+$/.test(v)) return '❗ ФИО не может состоять из цифр. Введите ФИО:';
-      if (v.length < 2) return '❗ ФИО слишком короткое. Введите ФИО:';
-      return null;
-    case 'birth_date':
-      if (!/^\d{2}\.\d{2}\.\d{4}$/.test(v))
-        return '❗ Неверный формат. Введите дату ДД.ММ.ГГГГ:';
-      return null;
-    case 'city':
-      if (/^\d+$/.test(v)) return '❗ Город не может быть числом. Введите город:';
-      if (v.length < 2) return '❗ Слишком короткое. Введите город:';
-      return null;
-    case 'phone':
-      if (!/^[\+\d][\d\s\-\(\)]{6,17}$/.test(v))
-        return '❗ Неверный формат. Пример: +79001234567. Введите снова:';
-      return null;
-    default:
-      return null;
-  }
+  if (field === 'target_id' && !/^\d{5,12}$/.test(v))      return '❗ Telegram ID — число (5–12 цифр). Попробуйте снова:';
+  if (field === 'full_name' && (/^\d+$/.test(v) || v.length < 2)) return '❗ Некорректное ФИО. Введите снова:';
+  if (field === 'birth_date' && !/^\d{2}\.\d{2}\.\d{4}$/.test(v)) return '❗ Неверный формат. Введите дату ДД.ММ.ГГГГ:';
+  if (field === 'city' && (/^\d+$/.test(v) || v.length < 2))  return '❗ Город не может быть числом. Введите город:';
+  if (field === 'phone' && !/^[\+\d][\d\s\-\(\)]{6,17}$/.test(v)) return '❗ Неверный формат. Пример: +79001234567:';
+  return null;
 }
 
-const FIELD_MAP: Partial<Record<BotState, string>> = {
-  target_id: 'target_id',
-  full_name: 'full_name',
-  birth_date: 'birth_date',
-  city: 'city',
-  phone: 'phone',
-};
+// ─── Questionnaire ─────────────────────────────────────────────────────────────
 
-const NEXT_STATE: Partial<Record<BotState, BotState>> = {
-  target_id: 'full_name',
-  full_name: 'birth_date',
-  birth_date: 'city',
-  city: 'phone',
-  phone: 'avatar',
+const Q_NEXT: Partial<Record<BotState, BotState>> = {
+  target_id: 'full_name', full_name: 'birth_date',
+  birth_date: 'city',     city: 'phone', phone: 'avatar',
 };
-
-const PROMPTS: Record<string, string> = {
+const Q_PROMPT: Partial<Record<BotState, string>> = {
   target_id: '🎯 Введите Telegram ID человека, на которого создаётся досье:',
-  full_name: '👤 Введите ФИО:',
+  full_name:  '👤 Введите ФИО:',
   birth_date: '📅 Введите дату рождения (ДД.ММ.ГГГГ):',
-  city: '🏙️ Введите город:',
-  phone: '📞 Введите номер телефона:',
-  avatar: '🖼️ Отправьте фотографию для аватара:',
-  add_media_id: '🎯 Введите Telegram ID досье, к которому добавляем фото:',
-  add_media_photos: '📸 Отправляйте фотографии. Нажмите кнопку когда закончите.',
+  city:       '🏙️ Введите город:',
+  phone:      '📞 Введите номер телефона:',
+  avatar:     '🖼️ Отправьте фотографию для аватара:',
+};
+const Q_FIELD: Partial<Record<BotState, string>> = {
+  target_id: 'target_id', full_name: 'full_name',
+  birth_date: 'birth_date', city: 'city', phone: 'phone',
 };
 
-// ─── Main handler ─────────────────────────────────────────────────────────────
+// ─── Main handler ──────────────────────────────────────────────────────────────
 
 export async function handleUpdate(update: TelegramUpdate, env: Env): Promise<void> {
   const db = new SupabaseClient(env);
   const token = env.TELEGRAM_BOT_TOKEN;
-
-  if (update.callback_query) {
-    await handleCallback(update.callback_query, db, token, env);
-    return;
-  }
-
-  if (update.message) {
-    await handleMessage(update.message, db, token, env);
-  }
+  if (update.callback_query) { await handleCallback(update.callback_query, db, token, env); return; }
+  if (update.message)        { await handleMessage(update.message, db, token, env); }
 }
 
-// ─── Callback handler ─────────────────────────────────────────────────────────
+// ─── Callback handler ──────────────────────────────────────────────────────────
 
 async function handleCallback(
   cq: NonNullable<TelegramUpdate['callback_query']>,
-  db: SupabaseClient,
-  token: string,
-  env: Env,
+  db: SupabaseClient, token: string, env: Env,
 ): Promise<void> {
   const userId = cq.from.id;
   const chatId = cq.message?.chat.id ?? userId;
-  const data = cq.data ?? '';
+  const msgId  = cq.message?.message_id;
+  const data   = cq.data ?? '';
 
-  await answerCallback(token, cq.id);
+  await answerCb(token, cq.id);
+
+  if (data === 'menu') {
+    await edit(token, chatId, msgId, '👋 Главное меню:', KB_MAIN); return;
+  }
 
   if (data === 'create') {
     await db.upsertSession(userId, 'target_id', {});
-    await send(token, chatId, PROMPTS.target_id);
-    return;
+    await edit(token, chatId, msgId, Q_PROMPT.target_id!); return;
   }
 
-  if (data === 'add_photo') {
-    await db.upsertSession(userId, 'add_media_id', {});
-    await send(token, chatId, PROMPTS.add_media_id);
-    return;
+  if (data === 'lst') {
+    const all = await db.getAllDossiers();
+    if (!all.length) { await edit(token, chatId, msgId, '📭 Досье ещё нет.', KB_MAIN); return; }
+    const kb: InlineKeyboard = {
+      inline_keyboard: [
+        ...all.map((d) => [{ text: d.full_name, callback_data: `v:${d.id}` }]),
+        [{ text: '⬅️ Назад', callback_data: 'menu' }],
+      ],
+    };
+    await edit(token, chatId, msgId, `📁 Все досье (${all.length}):`, kb); return;
   }
 
-  if (data.startsWith('section:')) {
-    const section = data.split(':')[1] as MediaSection;
-    const session = await db.getSession(userId);
-    if (!session) return;
-    session.temp_data.media_section = section;
-    await db.upsertSession(userId, 'add_media_photos', session.temp_data);
-    await send(token, chatId, PROMPTS.add_media_photos, KB_DONE);
-    return;
+  if (data.startsWith('v:') && !data.startsWith('v:')) return; // guard
+  if (/^v:\d+$/.test(data)) {
+    const id = parseInt(data.slice(2), 10);
+    const d  = await db.getDossier(id);
+    if (!d) { await edit(token, chatId, msgId, '❗ Досье не найдено.', KB_MAIN); return; }
+    const txt = `📋 *${esc(d.full_name)}*\nID: \`${id}\`\n\n👤 ${esc(d.full_name)}\n📅 ${d.birth_date}\n🏙️ ${esc(d.city)}\n📞 ${d.phone}`;
+    await edit(token, chatId, msgId, txt, kbView(id)); return;
   }
 
-  if (data === 'media_done') {
-    const session = await db.getSession(userId);
-    if (!session) return;
-    const targetId = parseInt(session.temp_data.target_id, 10);
-    await db.upsertSession(userId, 'done', session.temp_data);
-    const link = `https://${env.PAGES_DOMAIN}/${targetId}`;
-    await send(token, chatId, `✅ Фотографии добавлены!\n\n🔗 ${link}`, KB_MAIN);
-    return;
+  if (data.startsWith('link:')) {
+    const id = data.slice(5);
+    await send(token, chatId, `🔗 https://${env.PAGES_DOMAIN}/${id}`); return;
+  }
+
+  if (/^e:\d+$/.test(data)) {
+    const id = parseInt(data.slice(2), 10);
+    const d  = await db.getDossier(id);
+    if (!d) return;
+    await edit(token, chatId, msgId, `✏️ *Редактирование:* ${esc(d.full_name)}\n\nВыберите поле:`, kbEdit(id)); return;
+  }
+
+  if (data.startsWith('ef:')) {
+    const [, rawId, code] = data.split(':');
+    const id = parseInt(rawId, 10);
+    const f  = FIELDS[code];
+    if (!f) return;
+    await db.upsertSession(userId, 'edit_field', { edit_dossier_id: String(id), edit_field_code: code });
+    await edit(token, chatId, msgId, f.prompt); return;
+  }
+
+  if (data.startsWith('sec:')) {
+    const id = parseInt(data.slice(4), 10);
+    const d  = await db.getDossier(id);
+    if (!d) return;
+    await edit(token, chatId, msgId, `👁 *Управление разделами*\n${esc(d.full_name)}`, kbSections(id, d.hidden_sections ?? [])); return;
+  }
+
+  if (data.startsWith('ts:')) {
+    const [, rawId, code] = data.split(':');
+    const id = parseInt(rawId, 10);
+    const d  = await db.getDossier(id);
+    if (!d) return;
+    const hidden = d.hidden_sections ?? [];
+    const next   = hidden.includes(code) ? hidden.filter((s) => s !== code) : [...hidden, code];
+    await db.updateHiddenSections(id, next);
+    await edit(token, chatId, msgId, `👁 *Управление разделами*\n${esc(d.full_name)}`, kbSections(id, next)); return;
+  }
+
+  if (data.startsWith('inf:')) {
+    const id = parseInt(data.slice(4), 10);
+    await db.upsertSession(userId, 'add_info', { info_dossier_id: String(id) });
+    await edit(token, chatId, msgId, '📝 Отправьте текст или .txt файл с информацией:'); return;
+  }
+
+  if (data.startsWith('am:')) {
+    const id = parseInt(data.slice(3), 10);
+    await edit(token, chatId, msgId, '📁 Выберите раздел:', kbMediaSection(id)); return;
+  }
+
+  if (data.startsWith('ms:')) {
+    const [, rawId, code] = data.split(':');
+    const id: number      = parseInt(rawId, 10);
+    const section: MediaSection = code === 'cr' ? 'correspondence' : 'gallery';
+    await db.upsertSession(userId, 'add_media_photos', { target_id: String(id), media_section: section });
+    await edit(token, chatId, msgId, '📸 Отправляйте фото или видео:', kbDone(id)); return;
+  }
+
+  if (data.startsWith('md:')) {
+    const id = parseInt(data.slice(3), 10);
+    await db.upsertSession(userId, 'done', {});
+    await edit(token, chatId, msgId, '✅ Медиа сохранено!', kbView(id)); return;
   }
 }
 
-// ─── Message handler ──────────────────────────────────────────────────────────
+// ─── Message handler ───────────────────────────────────────────────────────────
 
 async function handleMessage(
-  message: NonNullable<TelegramUpdate['message']>,
-  db: SupabaseClient,
-  token: string,
-  env: Env,
+  msg: NonNullable<TelegramUpdate['message']>,
+  db: SupabaseClient, token: string, env: Env,
 ): Promise<void> {
-  const userId = message.from.id;
-  const chatId = message.chat.id;
+  const userId = msg.from.id;
+  const chatId = msg.chat.id;
 
-  if (message.text === '/start') {
+  if (msg.text === '/start') {
     await db.upsertSession(userId, 'idle', {});
-    await send(token, chatId, '👋 Добро пожаловать!\n\nВыберите действие:', KB_MAIN);
-    return;
+    await send(token, chatId, '👋 Добро пожаловать!\n\nВыберите действие:', KB_MAIN); return;
   }
 
   const session = await db.getSession(userId);
   if (!session || session.state === 'idle' || session.state === 'done') {
-    await send(token, chatId, 'Выберите действие:', KB_MAIN);
-    return;
+    await send(token, chatId, 'Выберите действие:', KB_MAIN); return;
   }
 
   const { state, temp_data } = session;
 
-  // ── Загрузка медиафайлов (фото и видео) ──
+  // ── Upload media ──────────────────────────────────────────────────────────
   if (state === 'add_media_photos') {
     const targetId = parseInt(temp_data.target_id, 10);
-    const section = temp_data.media_section as MediaSection;
-    const uuid = crypto.randomUUID();
-
-    if (message.photo?.length) {
-      const photo = message.photo[message.photo.length - 1];
-      const buffer = await downloadFile(token, photo.file_id);
-      const url = await db.uploadMedia(targetId, section, buffer, uuid, 'image');
+    const section  = temp_data.media_section as MediaSection;
+    const uuid     = crypto.randomUUID();
+    if (msg.photo?.length) {
+      const buf = await dlFile(token, msg.photo[msg.photo.length - 1].file_id);
+      const url = await db.uploadMedia(targetId, section, buf, uuid, 'image');
       await db.insertMedia(targetId, section, url, 'image');
-      await send(token, chatId, '✅ Фото добавлено. Отправьте ещё или завершите.', KB_DONE);
-      return;
+      await send(token, chatId, '✅ Фото добавлено.', kbDone(targetId)); return;
     }
-
-    if (message.video) {
-      const buffer = await downloadFile(token, message.video.file_id);
-      const url = await db.uploadMedia(targetId, section, buffer, uuid, 'video');
+    if (msg.video) {
+      const buf = await dlFile(token, msg.video.file_id);
+      const url = await db.uploadMedia(targetId, section, buf, uuid, 'video');
       await db.insertMedia(targetId, section, url, 'video');
-      await send(token, chatId, '✅ Видео добавлено. Отправьте ещё или завершите.', KB_DONE);
-      return;
+      await send(token, chatId, '✅ Видео добавлено.', kbDone(targetId)); return;
     }
-
-    await send(token, chatId, '❗ Отправьте фото или видео.', KB_DONE);
-    return;
+    await send(token, chatId, '❗ Отправьте фото или видео.', kbDone(targetId)); return;
   }
 
-  // ── ID для добавления медиа ──
-  if (state === 'add_media_id') {
-    if (!message.text) { await send(token, chatId, PROMPTS.add_media_id); return; }
-    const err = validate(state, message.text);
-    if (err) { await send(token, chatId, err); return; }
-    const targetId = parseInt(message.text.trim(), 10);
-    const dossier = await db.getDossier(targetId);
-    if (!dossier) {
-      await send(token, chatId, `❗ Досье с ID ${targetId} не найдено. Введите другой ID:`);
-      return;
+  // ── Edit field ─────────────────────────────────────────────────────────────
+  if (state === 'edit_field') {
+    const dossierId = parseInt(temp_data.edit_dossier_id, 10);
+    const f = FIELDS[temp_data.edit_field_code];
+    if (!f) return;
+    if (f.photo) {
+      if (!msg.photo?.length) { await send(token, chatId, '❗ Отправьте фотографию.'); return; }
+      const url = await db.uploadAvatar(dossierId, await dlFile(token, msg.photo[msg.photo.length - 1].file_id));
+      await db.updateDossierField(dossierId, 'avatar_url', url);
+    } else {
+      if (!msg.text) { await send(token, chatId, '❗ Введите текст.'); return; }
+      const err = validate(f.db, msg.text);
+      if (err) { await send(token, chatId, err); return; }
+      await db.updateDossierField(dossierId, f.db, msg.text.trim());
     }
-    temp_data.target_id = String(targetId);
-    await db.upsertSession(userId, 'add_media_type', temp_data);
-    await send(token, chatId, `📁 Досье: *${dossier.full_name}*\n\nВыберите раздел:`, KB_SECTION);
-    return;
+    await db.upsertSession(userId, 'done', {});
+    const d = await db.getDossier(dossierId);
+    await send(token, chatId, `✅ Сохранено!\n\n📋 *${esc(d?.full_name ?? '')}*`, kbView(dossierId)); return;
   }
 
-  // ── Аватар ──
+  // ── Add info ──────────────────────────────────────────────────────────────
+  if (state === 'add_info') {
+    const dossierId = parseInt(temp_data.info_dossier_id, 10);
+    if (msg.text) {
+      await db.updateInfoText(dossierId, msg.text);
+      await db.upsertSession(userId, 'done', {});
+      await send(token, chatId, '✅ Информация сохранена.', kbView(dossierId)); return;
+    }
+    if (msg.document) {
+      if (!msg.document.mime_type?.includes('text')) {
+        await send(token, chatId, '❗ Поддерживаются только .txt файлы.'); return;
+      }
+      const text = new TextDecoder().decode(await dlFile(token, msg.document.file_id));
+      await db.updateInfoText(dossierId, text);
+      await db.upsertSession(userId, 'done', {});
+      await send(token, chatId, '✅ Информация из файла сохранена.', kbView(dossierId)); return;
+    }
+    await send(token, chatId, '❗ Отправьте текст или .txt файл.'); return;
+  }
+
+  // ── Questionnaire ─────────────────────────────────────────────────────────
   if (state === 'avatar') {
-    if (!message.photo?.length) {
-      await send(token, chatId, '❗ Пожалуйста, отправьте фотографию.');
-      return;
-    }
-    const targetId = parseInt(temp_data.target_id, 10);
-    const photo = message.photo[message.photo.length - 1];
-    const buffer = await downloadFile(token, photo.file_id);
-    const avatarUrl = await db.uploadAvatar(targetId, buffer);
+    if (!msg.photo?.length) { await send(token, chatId, '❗ Отправьте фотографию.'); return; }
+    const targetId  = parseInt(temp_data.target_id, 10);
+    const avatarUrl = await db.uploadAvatar(targetId, await dlFile(token, msg.photo[msg.photo.length - 1].file_id));
     await db.upsertDossier(targetId, {
-      full_name: temp_data.full_name ?? '',
-      birth_date: temp_data.birth_date ?? '',
-      city: temp_data.city ?? '',
-      phone: temp_data.phone ?? '',
+      full_name: temp_data.full_name ?? '', birth_date: temp_data.birth_date ?? '',
+      city: temp_data.city ?? '',          phone: temp_data.phone ?? '',
       avatar_url: avatarUrl,
     });
     await db.upsertSession(userId, 'done', temp_data);
-    const link = `https://${env.PAGES_DOMAIN}/${targetId}`;
-    await send(token, chatId, `✅ Досье создано!\n\n🔗 ${link}`, KB_MAIN);
-    return;
+    await send(token, chatId, `✅ Досье создано!\n\n🔗 https://${env.PAGES_DOMAIN}/${targetId}`, KB_MAIN); return;
   }
 
-  // ── Текстовые поля анкеты ──
-  if (!message.text) {
-    await send(token, chatId, '❗ Введите текст.');
-    return;
-  }
+  if (!msg.text) { await send(token, chatId, '❗ Введите текст.'); return; }
 
-  const err = validate(state, message.text);
+  const dbField = Q_FIELD[state] ?? '';
+  const err = validate(dbField, msg.text);
   if (err) { await send(token, chatId, err); return; }
+  if (dbField) temp_data[dbField] = msg.text.trim();
 
-  const field = FIELD_MAP[state];
-  if (field) temp_data[field] = message.text.trim();
-
-  const next = NEXT_STATE[state];
+  const next = Q_NEXT[state];
   if (!next) return;
-
   await db.upsertSession(userId, next, temp_data);
-  await send(token, chatId, PROMPTS[next]);
+  await send(token, chatId, Q_PROMPT[next]!);
 }
 
-// ─── Telegram helpers ─────────────────────────────────────────────────────────
+// ─── Telegram API helpers ──────────────────────────────────────────────────────
 
-async function send(
-  token: string,
-  chatId: number,
-  text: string,
-  keyboard?: InlineKeyboard,
-): Promise<void> {
+async function edit(token: string, chatId: number, msgId: number | undefined, text: string, kb?: InlineKeyboard): Promise<void> {
+  if (msgId) {
+    const res = await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, message_id: msgId, text, parse_mode: 'Markdown', ...(kb ? { reply_markup: kb } : {}) }),
+    });
+    if (res.ok) return;
+  }
+  await send(token, chatId, text, kb);
+}
+
+async function send(token: string, chatId: number, text: string, kb?: InlineKeyboard): Promise<void> {
   await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: 'Markdown',
-      ...(keyboard ? { reply_markup: keyboard } : {}),
-    }),
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown', ...(kb ? { reply_markup: kb } : {}) }),
   });
 }
 
-async function answerCallback(token: string, callbackQueryId: string): Promise<void> {
+async function answerCb(token: string, id: string): Promise<void> {
   await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ callback_query_id: callbackQueryId }),
+    body: JSON.stringify({ callback_query_id: id }),
   });
 }
 
-async function downloadFile(token: string, fileId: string): Promise<ArrayBuffer> {
-  const res = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`);
-  const data = (await res.json()) as { result: { file_path: string } };
-  const file = await fetch(`https://api.telegram.org/file/bot${token}/${data.result.file_path}`);
-  return file.arrayBuffer();
+async function dlFile(token: string, fileId: string): Promise<ArrayBuffer> {
+  const r1 = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`);
+  const d  = (await r1.json()) as { result: { file_path: string } };
+  const r2 = await fetch(`https://api.telegram.org/file/bot${token}/${d.result.file_path}`);
+  return r2.arrayBuffer();
+}
+
+function esc(s: string): string {
+  return s.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&');
 }

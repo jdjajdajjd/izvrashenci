@@ -19,35 +19,31 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
 
   const url = new URL(request.url);
 
-  // GET /api/dossier/:id
   const dossierMatch = url.pathname.match(/^\/api\/dossier\/(\d+)$/);
   if (dossierMatch) {
     const telegramId = parseInt(dossierMatch[1], 10);
     const db = new SupabaseClient(env);
-    const dossier = await db.getDossier(telegramId);
-    if (!dossier) return json({ error: 'Dossier not found' }, 404);
+    const d = await db.getDossier(telegramId);
+    if (!d) return json({ error: 'Dossier not found' }, 404);
     return json({
-      full_name: dossier.full_name,
-      birth_date: dossier.birth_date,
-      city: dossier.city,
-      phone: dossier.phone,
-      avatar_url: dossier.avatar_url,
+      full_name:       d.full_name,
+      birth_date:      d.birth_date,
+      city:            d.city,
+      phone:           d.phone,
+      avatar_url:      d.avatar_url,
+      info_text:       d.info_text ?? '',
+      hidden_sections: d.hidden_sections ?? [],
     });
   }
 
-  // GET /api/dossier/:id/media
   const mediaMatch = url.pathname.match(/^\/api\/dossier\/(\d+)\/media$/);
   if (mediaMatch) {
     const telegramId = parseInt(mediaMatch[1], 10);
     const db = new SupabaseClient(env);
     const media = await db.getMedia(telegramId);
     return json({
-      correspondence: media
-        .filter((m) => m.section === 'correspondence')
-        .map((m) => ({ url: m.url, type: m.media_type })),
-      gallery: media
-        .filter((m) => m.section === 'gallery')
-        .map((m) => ({ url: m.url, type: m.media_type })),
+      correspondence: media.filter((m) => m.section === 'correspondence').map((m) => ({ url: m.url, type: m.media_type })),
+      gallery:        media.filter((m) => m.section === 'gallery').map((m) => ({ url: m.url, type: m.media_type })),
     });
   }
 

@@ -13,46 +13,30 @@ interface Dossier {
   city: string;
   phone: string;
   avatar_url: string;
+  info_text: string;
+  hidden_sections: string[];
 }
 
-interface MediaItem {
-  url: string;
-  type: 'image' | 'video';
-}
-
-interface Media {
-  correspondence: MediaItem[];
-  gallery: MediaItem[];
-}
+interface MediaItem { url: string; type: 'image' | 'video'; }
+interface Media { correspondence: MediaItem[]; gallery: MediaItem[]; }
 
 export default function DossierPage() {
   const params = useParams();
   const telegram_id = params.telegram_id as string;
 
   const [dossier, setDossier] = useState<Dossier | null>(null);
-  const [media, setMedia] = useState<Media>({ correspondence: [], gallery: [] });
+  const [media, setMedia]     = useState<Media>({ correspondence: [], gallery: [] });
+  const [status, setStatus]   = useState<'loading' | 'found' | 'not_found'>('loading');
+  const [lightbox, setLightbox]         = useState<string | null>(null);
   const [lightboxType, setLightboxType] = useState<'image' | 'video'>('image');
-  const [status, setStatus] = useState<'loading' | 'found' | 'not_found'>('loading');
-  const [lightbox, setLightbox] = useState<string | null>(null);
 
-  const openLightbox = (url: string, type: 'image' | 'video') => {
-    setLightbox(url);
-    setLightboxType(type);
-  };
+  const openLightbox = (url: string, type: 'image' | 'video') => { setLightbox(url); setLightboxType(type); };
 
   useEffect(() => {
-    if (!telegram_id || !/^\d+$/.test(telegram_id)) {
-      setStatus('not_found');
-      return;
-    }
-
+    if (!telegram_id || !/^\d+$/.test(telegram_id)) { setStatus('not_found'); return; }
     Promise.all([
-      fetch(`${WORKER_URL}/api/dossier/${telegram_id}`).then((r) =>
-        r.ok ? r.json() : null,
-      ),
-      fetch(`${WORKER_URL}/api/dossier/${telegram_id}/media`).then((r) =>
-        r.ok ? r.json() : { correspondence: [], gallery: [] },
-      ),
+      fetch(`${WORKER_URL}/api/dossier/${telegram_id}`).then((r) => r.ok ? r.json() : null),
+      fetch(`${WORKER_URL}/api/dossier/${telegram_id}/media`).then((r) => r.ok ? r.json() : { correspondence: [], gallery: [] }),
     ])
       .then(([d, m]) => {
         if (!d) { setStatus('not_found'); return; }
@@ -63,56 +47,34 @@ export default function DossierPage() {
       .catch(() => setStatus('not_found'));
   }, [telegram_id]);
 
-  if (status === 'loading') {
-    return (
-      <main className="flex items-center justify-center min-h-screen">
-        <div className="text-[var(--muted)] text-sm animate-pulse">Загрузка...</div>
-      </main>
-    );
-  }
+  if (status === 'loading') return (
+    <main className="flex items-center justify-center min-h-screen">
+      <div className="text-[var(--muted)] text-sm animate-pulse">Загрузка...</div>
+    </main>
+  );
 
-  if (status === 'not_found' || !dossier) {
-    return (
-      <main className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <p className="text-6xl font-bold text-[var(--border)] mb-4">404</p>
-          <p className="text-[var(--muted)] text-sm">Досье не найдено</p>
-        </div>
-      </main>
-    );
-  }
+  if (status === 'not_found' || !dossier) return (
+    <main className="flex items-center justify-center min-h-screen">
+      <div className="text-center">
+        <p className="text-6xl font-bold text-[var(--border)] mb-4">404</p>
+        <p className="text-[var(--muted)] text-sm">Досье не найдено</p>
+      </div>
+    </main>
+  );
+
+  const hidden = dossier.hidden_sections ?? [];
+  const visible = (key: string) => !hidden.includes(key);
 
   return (
     <>
-      {/* Lightbox */}
       {lightbox && (
-        <div
-          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-          onClick={() => setLightbox(null)}
-        >
-          <button
-            className="absolute top-4 right-4 text-white text-3xl leading-none opacity-70 hover:opacity-100"
-            onClick={() => setLightbox(null)}
-          >
-            ✕
-          </button>
-          {lightboxType === 'video' ? (
-            <video
-              src={lightbox}
-              controls
-              autoPlay
-              className="max-w-full max-h-[90vh] rounded-lg"
-              onClick={(e) => e.stopPropagation()}
-            />
-          ) : (
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
+          <button className="absolute top-4 right-4 text-white text-3xl opacity-70 hover:opacity-100" onClick={() => setLightbox(null)}>✕</button>
+          {lightboxType === 'video'
+            ? <video src={lightbox} controls autoPlay className="max-w-full max-h-[90vh] rounded-lg" onClick={(e) => e.stopPropagation()} />
             // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={lightbox}
-              alt=""
-              className="max-w-full max-h-[90vh] object-contain rounded-lg"
-              onClick={(e) => e.stopPropagation()}
-            />
-          )}
+            : <img src={lightbox} alt="" className="max-w-full max-h-[90vh] object-contain rounded-lg" onClick={(e) => e.stopPropagation()} />
+          }
         </div>
       )}
 
@@ -120,18 +82,11 @@ export default function DossierPage() {
         {/* Header */}
         <div className="flex items-center gap-6 mb-10">
           <div className="w-20 h-20 rounded-full overflow-hidden bg-[var(--surface)] border border-[var(--border)] flex-shrink-0">
-            {dossier.avatar_url ? (
+            {dossier.avatar_url
               // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={dossier.avatar_url}
-                alt={dossier.full_name}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-2xl text-[var(--muted)]">
-                ?
-              </div>
-            )}
+              ? <img src={dossier.avatar_url} alt={dossier.full_name} className="w-full h-full object-cover" />
+              : <div className="w-full h-full flex items-center justify-center text-2xl text-[var(--muted)]">?</div>
+            }
           </div>
           <div>
             <p className="text-xs text-[var(--muted)] mb-1">ID: {telegram_id}</p>
@@ -140,31 +95,37 @@ export default function DossierPage() {
         </div>
 
         {/* Info */}
-        <section className="mb-6 bg-[var(--surface)] rounded-xl border border-[var(--border)] divide-y divide-[var(--border)]">
+        <section className="mb-4 bg-[var(--surface)] rounded-xl border border-[var(--border)] divide-y divide-[var(--border)]">
           <InfoRow label="Дата рождения" value={dossier.birth_date} />
-          <InfoRow label="Город" value={dossier.city} />
-          <InfoRow label="Телефон" value={dossier.phone} />
+          <InfoRow label="Город"         value={dossier.city} />
+          <InfoRow label="Телефон"       value={dossier.phone} />
         </section>
 
-        {/* Correspondence */}
-        <PhotoSection
-          title="Переписка"
-          icon="💬"
-          photos={media.correspondence}
-          onOpen={openLightbox}
-        />
+        {/* Информация */}
+        {visible('info') && dossier.info_text && (
+          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 mb-4">
+            <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
+              <span>ℹ️</span><span>Информация</span>
+            </h2>
+            <pre className="text-xs text-[var(--muted)] whitespace-pre-wrap font-mono leading-relaxed">{dossier.info_text}</pre>
+          </div>
+        )}
 
-        {/* Gallery */}
-        <PhotoSection
-          title="Медиа"
-          icon="🎞️"
-          photos={media.gallery}
-          onOpen={openLightbox}
-        />
+        {/* Переписка */}
+        {visible('correspondence') && (
+          <MediaSection title="Переписка" icon="💬" items={media.correspondence} onOpen={openLightbox} />
+        )}
 
-        {/* Static sections */}
-        <EmptySection title="Друзья из ВК" icon="👥" />
-        <EmptySection title="Родственники" icon="🧬" />
+        {/* Медиа */}
+        {visible('gallery') && (
+          <MediaSection title="Медиа" icon="🎞️" items={media.gallery} onOpen={openLightbox} />
+        )}
+
+        {/* Друзья из ВК */}
+        {visible('vk_friends') && <EmptySection title="Друзья из ВК" icon="👥" />}
+
+        {/* Родственники */}
+        {visible('relatives') && <EmptySection title="Родственники" icon="🧬" />}
       </main>
     </>
   );
@@ -179,59 +140,36 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function PhotoSection({
-  title,
-  icon,
-  photos,
-  onOpen,
-}: {
-  title: string;
-  icon: string;
-  photos: MediaItem[];
+function MediaSection({ title, icon, items, onOpen }: {
+  title: string; icon: string; items: MediaItem[];
   onOpen: (url: string, type: 'image' | 'video') => void;
 }) {
   return (
     <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 mb-4">
       <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
-        <span>{icon}</span>
-        <span>{title}</span>
-        {photos.length > 0 && (
-          <span className="ml-auto text-xs text-[var(--muted)]">{photos.length} файлов</span>
-        )}
+        <span>{icon}</span><span>{title}</span>
+        {items.length > 0 && <span className="ml-auto text-xs text-[var(--muted)]">{items.length} файлов</span>}
       </h2>
-
-      {photos.length === 0 ? (
-        <p className="text-xs text-[var(--muted)]">Нет данных</p>
-      ) : (
-        <div className="grid grid-cols-3 gap-2">
-          {photos.map((item, i) => (
-            <button
-              key={i}
-              onClick={() => onOpen(item.url, item.type)}
-              className="relative aspect-square rounded-lg overflow-hidden bg-[var(--border)] hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-            >
-              {item.type === 'video' ? (
-                <>
-                  <video
-                    src={item.url}
-                    className="w-full h-full object-cover"
-                    muted
-                    preload="metadata"
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="bg-black/50 rounded-full w-8 h-8 flex items-center justify-center text-white text-sm">
-                      ▶
-                    </div>
-                  </div>
-                </>
-              ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={item.url} alt="" className="w-full h-full object-cover" />
-              )}
-            </button>
-          ))}
-        </div>
-      )}
+      {items.length === 0
+        ? <p className="text-xs text-[var(--muted)]">Нет данных</p>
+        : <div className="grid grid-cols-3 gap-2">
+            {items.map((item, i) => (
+              <button key={i} onClick={() => onOpen(item.url, item.type)}
+                className="relative aspect-square rounded-lg overflow-hidden bg-[var(--border)] hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-[var(--accent)]">
+                {item.type === 'video'
+                  ? <>
+                      <video src={item.url} className="w-full h-full object-cover" muted preload="metadata" />
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="bg-black/50 rounded-full w-8 h-8 flex items-center justify-center text-white text-sm">▶</div>
+                      </div>
+                    </>
+                  // eslint-disable-next-line @next/next/no-img-element
+                  : <img src={item.url} alt="" className="w-full h-full object-cover" />
+                }
+              </button>
+            ))}
+          </div>
+      }
     </div>
   );
 }
@@ -240,8 +178,7 @@ function EmptySection({ title, icon }: { title: string; icon: string }) {
   return (
     <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 mb-4">
       <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
-        <span>{icon}</span>
-        <span>{title}</span>
+        <span>{icon}</span><span>{title}</span>
       </h2>
       <p className="text-xs text-[var(--muted)]">Нет данных</p>
     </div>

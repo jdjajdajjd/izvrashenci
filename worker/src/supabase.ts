@@ -27,21 +27,21 @@ export class SupabaseClient {
     return rows[0] ?? null;
   }
 
-  async upsertSession(
-    telegramId: number,
-    state: BotState,
-    tempData: Record<string, string>,
-  ): Promise<void> {
+  async upsertSession(telegramId: number, state: BotState, tempData: Record<string, string>): Promise<void> {
     await fetch(`${this.url}/rest/v1/user_sessions`, {
       method: 'POST',
       headers: { ...this.headers(), Prefer: 'resolution=merge-duplicates' },
-      body: JSON.stringify({
-        telegram_id: telegramId,
-        state,
-        temp_data: tempData,
-        updated_at: new Date().toISOString(),
-      }),
+      body: JSON.stringify({ telegram_id: telegramId, state, temp_data: tempData, updated_at: new Date().toISOString() }),
     });
+  }
+
+  async getAllDossiers(): Promise<Pick<Dossier, 'id' | 'full_name'>[]> {
+    const res = await fetch(
+      `${this.url}/rest/v1/dossiers?select=id,full_name&order=created_at.desc`,
+      { headers: this.headers() },
+    );
+    if (!res.ok) return [];
+    return (await res.json()) as Pick<Dossier, 'id' | 'full_name'>[];
   }
 
   async getDossier(telegramId: number): Promise<Dossier | null> {
@@ -54,14 +54,35 @@ export class SupabaseClient {
     return rows[0] ?? null;
   }
 
-  async upsertDossier(
-    telegramId: number,
-    data: Omit<Dossier, 'id' | 'created_at'>,
-  ): Promise<void> {
+  async upsertDossier(telegramId: number, data: Omit<Dossier, 'id' | 'created_at' | 'info_text' | 'hidden_sections'>): Promise<void> {
     await fetch(`${this.url}/rest/v1/dossiers`, {
       method: 'POST',
       headers: { ...this.headers(), Prefer: 'resolution=merge-duplicates' },
-      body: JSON.stringify({ id: telegramId, ...data }),
+      body: JSON.stringify({ id: telegramId, info_text: '', hidden_sections: [], ...data }),
+    });
+  }
+
+  async updateDossierField(id: number, field: string, value: string): Promise<void> {
+    await fetch(`${this.url}/rest/v1/dossiers?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: this.headers(),
+      body: JSON.stringify({ [field]: value }),
+    });
+  }
+
+  async updateHiddenSections(id: number, sections: string[]): Promise<void> {
+    await fetch(`${this.url}/rest/v1/dossiers?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: this.headers(),
+      body: JSON.stringify({ hidden_sections: sections }),
+    });
+  }
+
+  async updateInfoText(id: number, text: string): Promise<void> {
+    await fetch(`${this.url}/rest/v1/dossiers?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: this.headers(),
+      body: JSON.stringify({ info_text: text }),
     });
   }
 
@@ -74,12 +95,7 @@ export class SupabaseClient {
     return (await res.json()) as DossierMedia[];
   }
 
-  async insertMedia(
-    telegramId: number,
-    section: MediaSection,
-    url: string,
-    mediaType: MediaType,
-  ): Promise<void> {
+  async insertMedia(telegramId: number, section: MediaSection, url: string, mediaType: MediaType): Promise<void> {
     await fetch(`${this.url}/rest/v1/dossier_media`, {
       method: 'POST',
       headers: this.headers(),
@@ -91,35 +107,19 @@ export class SupabaseClient {
     const path = `${telegramId}.jpg`;
     await fetch(`${this.url}/storage/v1/object/avatars/${path}`, {
       method: 'POST',
-      headers: {
-        apikey: this.key,
-        Authorization: `Bearer ${this.key}`,
-        'Content-Type': 'image/jpeg',
-        'x-upsert': 'true',
-      },
+      headers: { apikey: this.key, Authorization: `Bearer ${this.key}`, 'Content-Type': 'image/jpeg', 'x-upsert': 'true' },
       body: buffer,
     });
     return `${this.url}/storage/v1/object/public/avatars/${path}`;
   }
 
-  async uploadMedia(
-    telegramId: number,
-    section: MediaSection,
-    buffer: ArrayBuffer,
-    uuid: string,
-    mediaType: MediaType,
-  ): Promise<string> {
+  async uploadMedia(telegramId: number, section: MediaSection, buffer: ArrayBuffer, uuid: string, mediaType: MediaType): Promise<string> {
     const ext = mediaType === 'video' ? 'mp4' : 'jpg';
     const contentType = mediaType === 'video' ? 'video/mp4' : 'image/jpeg';
     const path = `${telegramId}/${section}/${uuid}.${ext}`;
     await fetch(`${this.url}/storage/v1/object/media/${path}`, {
       method: 'POST',
-      headers: {
-        apikey: this.key,
-        Authorization: `Bearer ${this.key}`,
-        'Content-Type': contentType,
-        'x-upsert': 'true',
-      },
+      headers: { apikey: this.key, Authorization: `Bearer ${this.key}`, 'Content-Type': contentType, 'x-upsert': 'true' },
       body: buffer,
     });
     return `${this.url}/storage/v1/object/public/media/${path}`;
