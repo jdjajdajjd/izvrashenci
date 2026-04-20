@@ -79,7 +79,7 @@ export async function parseWithAI(buf: ArrayBuffer, mimeType: string, apiKey: st
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'claude-haiku-4-5',
+      model: 'claude-sonnet-4-5',
       max_tokens: 2048,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content }],

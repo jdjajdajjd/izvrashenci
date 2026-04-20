@@ -450,17 +450,30 @@ async function handleMessage(
     const mimeType = msg.document.mime_type ?? 'text/plain';
     const buf      = await dlFile(token, msg.document.file_id);
 
+    // Show "thinking" indicator
+    const usingAI = !!env.KIE_AI_KEY;
+    await edit(token, chatId, pmid, usingAI
+      ? '🤖 Анализирую файл через ИИ (Claude)...\n\nЭто займёт 5–15 секунд.'
+      : '🔄 Разбираю файл...', kbCancel(dossierId));
+
     // Try AI parsing first (kie.ai → Claude), fallback to regex
+    let aiError: string | undefined;
     let parsed = await (async () => {
       if (env.KIE_AI_KEY) {
         try {
           return await parseWithAI(buf, mimeType, env.KIE_AI_KEY);
         } catch (e) {
-          console.error('kie.ai parse failed, falling back to regex:', e);
+          aiError = String(e);
         }
       }
       return parseReport(buf, mimeType);
     })();
+
+    // If AI failed — tell the user
+    if (aiError) {
+      await edit(token, chatId, pmid, `⚠️ ИИ вернул ошибку, использую regex-парсер:\n\`${aiError.slice(0, 150)}\``, kbCancel(dossierId));
+      await new Promise(r => setTimeout(r, 2000));
+    }
 
     // Build patch object and summary
     const patch: Record<string, unknown> = {};
