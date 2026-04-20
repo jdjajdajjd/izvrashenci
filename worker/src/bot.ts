@@ -1,3 +1,4 @@
+import { parseWithAI } from './kieai';
 import { parseReport } from './parser';
 import { SupabaseClient } from './supabase';
 import type { BotState, Env, InlineKeyboard, MediaSection, MediaType, Relatives, TelegramUpdate } from './types';
@@ -448,7 +449,18 @@ async function handleMessage(
     }
     const mimeType = msg.document.mime_type ?? 'text/plain';
     const buf      = await dlFile(token, msg.document.file_id);
-    const parsed   = await parseReport(buf, mimeType);
+
+    // Try AI parsing first (kie.ai → Claude), fallback to regex
+    let parsed = await (async () => {
+      if (env.KIE_AI_KEY) {
+        try {
+          return await parseWithAI(buf, mimeType, env.KIE_AI_KEY);
+        } catch (e) {
+          console.error('kie.ai parse failed, falling back to regex:', e);
+        }
+      }
+      return parseReport(buf, mimeType);
+    })();
 
     // Build patch object and summary
     const patch: Record<string, unknown> = {};

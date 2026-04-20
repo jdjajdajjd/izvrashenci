@@ -153,4 +153,5 @@ export interface Env {
   SUPABASE_KEY: string;
   TELEGRAM_BOT_TOKEN: string;
   PAGES_DOMAIN: string;
+  KIE_AI_KEY?: string;
 }

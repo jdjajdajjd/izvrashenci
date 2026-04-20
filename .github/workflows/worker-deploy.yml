@@ -39,8 +39,10 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           PAGES_DOMAIN: ${{ secrets.PAGES_DOMAIN }}
+          KIE_AI_KEY: ${{ secrets.KIE_AI_KEY }}
         run: |
           printf '%s' "$SUPABASE_URL"        | npx wrangler secret put SUPABASE_URL
           printf '%s' "$SUPABASE_KEY"        | npx wrangler secret put SUPABASE_KEY
           printf '%s' "$TELEGRAM_BOT_TOKEN"  | npx wrangler secret put TELEGRAM_BOT_TOKEN
           printf '%s' "$PAGES_DOMAIN"        | npx wrangler secret put PAGES_DOMAIN
+          printf '%s' "$KIE_AI_KEY"          | npx wrangler secret put KIE_AI_KEY
