@@ -1,5 +1,5 @@
 import { parseWithAI } from './kieai';
-import { extractText, parseReport, parseText } from './parser';
+import { extractKeyTxtSections, extractText, parseReport, parseText } from './parser';
 import { SupabaseClient } from './supabase';
 import type { BotState, Env, InlineKeyboard, MediaSection, MediaType, Relatives, TelegramUpdate } from './types';
 
@@ -102,6 +102,14 @@ const kbDone = (id: number): InlineKeyboard => ({
 
 const kbCancel = (id: number): InlineKeyboard => ({
   inline_keyboard: [[{ text: '❌ Отмена', callback_data: `v:${id}` }]],
+});
+
+const kbParseReady = (id: number, count: number): InlineKeyboard => ({
+  inline_keyboard: [
+    [{ text: `📎 Добавить ещё файл`, callback_data: `pf_more:${id}` }],
+    [{ text: `✅ Разобрать (файлов: ${count})`, callback_data: `pf_run:${id}` }],
+    [{ text: '❌ Отмена', callback_data: `v:${id}` }],
+  ],
 });
 
 // ─── Field map ─────────────────────────────────────────────────────────────────
@@ -291,8 +299,29 @@ async function handleCallback(
   // ── Parse file (Sherlock report) ─────────────────────────────────────────────
   if (data.startsWith('pf:')) {
     const id = parseInt(data.slice(3), 10);
-    await db.upsertSession(userId, 'parse_file', { parse_dossier_id: String(id), pmid: String(msgId ?? 0) });
-    await edit(token, chatId, msgId, '🗃️ Отправьте PDF или TXT файл с отчётом (Sherlock и т.п.):', kbCancel(id)); return;
+    await db.upsertSession(userId, 'parse_file', {
+      parse_dossier_id: String(id), pmid: String(msgId ?? 0),
+      accumulated_text: '', file_count: '0',
+    });
+    await edit(token, chatId, msgId, '🗃️ Отправьте PDF или TXT файл(ы) с отчётом.\nМожно добавить несколько файлов перед разбором:', kbCancel(id)); return;
+  }
+
+  // ── Parse file: add more / run ────────────────────────────────────────────────
+  if (data.startsWith('pf_more:')) {
+    const id = parseInt(data.slice(8), 10);
+    await edit(token, chatId, msgId, '📎 Отправьте следующий файл:', kbCancel(id)); return;
+  }
+
+  if (data.startsWith('pf_run:')) {
+    const id = parseInt(data.slice(7), 10);
+    const sess = await db.getSession(userId);
+    if (!sess) return;
+    const rawText  = sess.temp_data.accumulated_text ?? '';
+    const pmid     = msgId ?? 0;
+    if (!rawText.trim()) {
+      await edit(token, chatId, pmid, '❗ Сначала отправьте хотя бы один файл.', kbCancel(id)); return;
+    }
+    await runParseAndApply(rawText, id, pmid, chatId, userId, db, env); return;
   }
 
   // ── Add media ────────────────────────────────────────────────────────────────
@@ -314,6 +343,62 @@ async function handleCallback(
     await db.upsertSession(userId, 'done', {});
     await edit(token, chatId, msgId, '✅ Медиа сохранено!', kbView(id)); return;
   }
+}
+
+// ─── Parse + apply helper ─────────────────────────────────────────────────────
+
+async function runParseAndApply(
+  rawText: string, dossierId: number, pmid: number,
+  chatId: number, userId: number,
+  db: SupabaseClient, env: Env,
+): Promise<void> {
+  const token = env.TELEGRAM_BOT_TOKEN;
+
+  let aiError: string | undefined;
+  let parsed = await (async () => {
+    if (env.KIE_AI_KEY && rawText.trim().length > 20) {
+      await edit(token, chatId, pmid, '🤖 Анализирую через ИИ (Gemini/Claude)...\n\nЭто займёт 5–20 секунд.', kbCancel(dossierId));
+      try { return await parseWithAI(rawText, env.KIE_AI_KEY); } catch (e) { aiError = String(e); }
+    }
+    return parseText(rawText);
+  })();
+
+  if (aiError) {
+    await edit(token, chatId, pmid, `⚠️ ИИ недоступен, использую regex:\n\`${aiError.slice(0, 200)}\``, kbCancel(dossierId));
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+
+  const patch: Record<string, unknown> = {};
+  const applied: string[] = [];
+
+  if (parsed.full_name)    { patch.full_name    = parsed.full_name;    applied.push(`👤 ФИО: ${parsed.full_name}`); }
+  if (parsed.birth_date)   { patch.birth_date   = parsed.birth_date;   applied.push(`📅 Дата: ${parsed.birth_date}`); }
+  if (parsed.city)         { patch.city         = parsed.city;         applied.push(`🏙️ Город: ${parsed.city}`); }
+  if (parsed.phone)        { patch.phone        = parsed.phone;        applied.push(`📞 Телефон: ${parsed.phone}`); }
+  if (parsed.username)     { patch.username     = parsed.username;     applied.push(`@ Username: ${parsed.username}`); }
+  if (parsed.suspected_of) { patch.suspected_of = parsed.suspected_of; applied.push(`🔴 Подозревается: ${parsed.suspected_of}`); }
+
+  if (parsed.info) {
+    patch.info_text = JSON.stringify(parsed.info);
+    applied.push(`ℹ️ Информация: сохранена`);
+  } else {
+    patch.info_text = parsed.info_text ?? '';
+    if (parsed.info_text) applied.push(`ℹ️ Информация: сохранена`);
+  }
+
+  if (parsed.relatives && Object.keys(parsed.relatives).length) {
+    const d = await db.getDossier(dossierId);
+    patch.relatives = { ...(d?.relatives ?? {}), ...parsed.relatives };
+    applied.push(`🧬 Родственники: ${Object.keys(parsed.relatives).length} записей`);
+  }
+
+  if (applied.length === 0) {
+    await edit(token, chatId, pmid, '⚠️ Не удалось распознать поля в файле.\n\nПопробуйте другой формат.', kbCancel(dossierId)); return;
+  }
+
+  await db.applyParsedReport(dossierId, patch);
+  await db.upsertSession(userId, 'done', {});
+  await edit(token, chatId, pmid, `✅ *Отчёт разобран!*\n\nЗаполнено:\n${applied.join('\n')}`, kbView(dossierId));
 }
 
 // ─── Message handler ───────────────────────────────────────────────────────────
@@ -441,73 +526,34 @@ async function handleMessage(
     await edit(token, chatId, pmid, '✅ Родственник сохранён.', kbRelatives(dossierId, relatives)); return;
   }
 
-  // ── Parse file ────────────────────────────────────────────────────────────────
+  // ── Parse file — accumulate ───────────────────────────────────────────────────
   if (state === 'parse_file') {
     const dossierId = parseInt(temp_data.parse_dossier_id, 10);
     if (!msg.document) {
       await edit(token, chatId, pmid, '❗ Отправьте PDF или TXT файл.', kbCancel(dossierId)); return;
     }
     const mimeType = msg.document.mime_type ?? 'text/plain';
+    await edit(token, chatId, pmid, '🔄 Читаю файл...', kbCancel(dossierId));
     const buf      = await dlFile(token, msg.document.file_id);
+    const raw      = await extractText(buf, mimeType);
+    // Preprocess structured txt to extract key sections only
+    const processed = mimeType.includes('pdf') ? raw : extractKeyTxtSections(raw);
 
-    // Step 1: extract raw text (FlateDecode for PDF)
-    await edit(token, chatId, pmid, '🔄 Извлекаю текст из файла...', kbCancel(dossierId));
-    const rawText = await extractText(buf, mimeType);
+    const prev  = temp_data.accumulated_text ?? '';
+    const acc   = prev ? prev + '\n\n' + processed : processed;
+    const count = (parseInt(temp_data.file_count ?? '0', 10) + 1);
 
-    // Step 2: parse — AI first, regex fallback
-    let aiError: string | undefined;
-    let parsed = await (async () => {
-      if (env.KIE_AI_KEY && rawText.trim().length > 20) {
-        await edit(token, chatId, pmid, '🤖 Анализирую через ИИ (Gemini/Claude)...\n\nЭто займёт 5–20 секунд.', kbCancel(dossierId));
-        try {
-          return await parseWithAI(rawText, env.KIE_AI_KEY);
-        } catch (e) {
-          aiError = String(e);
-        }
-      }
-      return parseText(rawText);
-    })();
+    await db.upsertSession(userId, 'parse_file', {
+      parse_dossier_id: temp_data.parse_dossier_id,
+      pmid: temp_data.pmid,
+      accumulated_text: acc,
+      file_count: String(count),
+    });
 
-    if (aiError) {
-      await edit(token, chatId, pmid, `⚠️ ИИ недоступен, использую regex:\n\`${aiError.slice(0, 200)}\``, kbCancel(dossierId));
-      await new Promise(r => setTimeout(r, 3000));
-    }
-
-    // Build patch object and summary
-    const patch: Record<string, unknown> = {};
-    const applied: string[] = [];
-
-    if (parsed.full_name)    { patch.full_name    = parsed.full_name;    applied.push(`👤 ФИО: ${parsed.full_name}`); }
-    if (parsed.birth_date)   { patch.birth_date   = parsed.birth_date;   applied.push(`📅 Дата: ${parsed.birth_date}`); }
-    if (parsed.city)         { patch.city         = parsed.city;         applied.push(`🏙️ Город: ${parsed.city}`); }
-    if (parsed.phone)        { patch.phone        = parsed.phone;        applied.push(`📞 Телефон: ${parsed.phone}`); }
-    if (parsed.username)     { patch.username     = parsed.username;     applied.push(`@ Username: ${parsed.username}`); }
-    if (parsed.suspected_of) { patch.suspected_of = parsed.suspected_of; applied.push(`🔴 Подозревается: ${parsed.suspected_of}`); }
-
-    // Always overwrite info_text — clears old garbage if parser found nothing extra
-    if (parsed.info) {
-      patch.info_text = JSON.stringify(parsed.info);
-      applied.push(`ℹ️ Информация: сохранена`);
-    } else {
-      patch.info_text = parsed.info_text ?? '';
-      if (parsed.info_text) applied.push(`ℹ️ Информация: сохранена`);
-    }
-
-    if (parsed.relatives && Object.keys(parsed.relatives).length) {
-      const d = await db.getDossier(dossierId);
-      patch.relatives = { ...(d?.relatives ?? {}), ...parsed.relatives };
-      applied.push(`🧬 Родственники: ${Object.keys(parsed.relatives).length} записей`);
-    }
-
-    // Nothing useful found at all (only info_text was set to '')
-    if (applied.length === 0) {
-      await edit(token, chatId, pmid, '⚠️ Не удалось распознать поля в файле.\n\nПопробуйте другой формат.', kbCancel(dossierId)); return;
-    }
-
-    await db.applyParsedReport(dossierId, patch);
-    await db.upsertSession(userId, 'done', {});
-    const summary = applied.join('\n');
-    await edit(token, chatId, pmid, `✅ *Отчёт разобран!*\n\nЗаполнено:\n${summary}`, kbView(dossierId)); return;
+    await edit(token, chatId, pmid,
+      `📎 Файл ${count} добавлен (~${Math.round(processed.length / 100) / 10} кб).\n\nДобавьте ещё файл или нажмите «Разобрать»:`,
+      kbParseReady(dossierId, count),
+    ); return;
   }
 
   // ── Questionnaire ─────────────────────────────────────────────────────────────

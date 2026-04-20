@@ -17,27 +17,41 @@ interface Relatives {
 
 interface InfoStructured {
   address_1?: string; address_2?: string; address_3?: string;
-  registration?: string; passport?: string; snils?: string; inn?: string;
-  car?: string; social_media?: string; email?: string; ip?: string;
-  country?: string; driver_license?: string; birthplace?: string; other?: string;
+  registration?: string;
+  passport?: string; passport_2?: string; snils?: string; inn?: string;
+  driver_license?: string; driver_license_expiry?: string;
+  car?: string; car_vin?: string;
+  phones?: string; email?: string; ip?: string; country?: string;
+  vk?: string; telegram?: string; tiktok?: string; social_media?: string;
+  work?: string; inn_ip?: string;
+  birthplace?: string; other?: string;
 }
 
 const INFO_LABELS: Array<[keyof InfoStructured, string]> = [
-  ['address_1',     'Адрес'],
-  ['address_2',     'Адрес 2'],
-  ['address_3',     'Адрес 3'],
-  ['registration',  'Прописка'],
-  ['passport',      'Паспорт'],
-  ['snils',         'СНИЛС'],
-  ['inn',           'ИНН'],
-  ['car',           'Авто'],
-  ['social_media',  'Соцсети'],
-  ['email',         'Email'],
-  ['ip',            'IP-адрес'],
-  ['country',       'Страна'],
-  ['driver_license','Вод. удостоверение'],
-  ['birthplace',    'Место рождения'],
-  ['other',         'Прочее'],
+  ['address_1',            'Адрес'],
+  ['address_2',            'Адрес 2'],
+  ['address_3',            'Адрес 3'],
+  ['registration',         'Прописка'],
+  ['passport',             'Паспорт'],
+  ['passport_2',           'Паспорт 2'],
+  ['snils',                'СНИЛС'],
+  ['inn',                  'ИНН'],
+  ['driver_license',       'Вод. удостоверение'],
+  ['driver_license_expiry','Срок ВУ'],
+  ['car',                  'Авто'],
+  ['car_vin',              'VIN'],
+  ['phones',               'Доп. телефоны'],
+  ['email',                'Email'],
+  ['ip',                   'IP-адрес'],
+  ['country',              'Страна'],
+  ['vk',                   'ВКонтакте'],
+  ['telegram',             'Telegram'],
+  ['tiktok',               'TikTok'],
+  ['social_media',         'Соцсети'],
+  ['work',                 'Место работы'],
+  ['inn_ip',               'ИНН ИП'],
+  ['birthplace',           'Место рождения'],
+  ['other',                'Прочее'],
 ];
 
 function parseInfoText(raw: string): InfoStructured | null {

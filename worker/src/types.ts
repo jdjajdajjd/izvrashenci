@@ -138,19 +138,35 @@ export interface DossierMedia {
 }
 
 export interface InfoStructured {
+  // Адреса
   address_1?: string;
   address_2?: string;
   address_3?: string;
   registration?: string;
+  // Документы
   passport?: string;
+  passport_2?: string;
   snils?: string;
   inn?: string;
+  driver_license?: string;
+  driver_license_expiry?: string;
+  // Транспорт
   car?: string;
-  social_media?: string;
+  car_vin?: string;
+  // Контакты
+  phones?: string;
   email?: string;
   ip?: string;
   country?: string;
-  driver_license?: string;
+  // Соцсети
+  vk?: string;
+  telegram?: string;
+  tiktok?: string;
+  social_media?: string;
+  // Работа / бизнес
+  work?: string;
+  inn_ip?: string;
+  // Прочее
   birthplace?: string;
   other?: string;
 }
