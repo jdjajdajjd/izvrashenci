@@ -42,8 +42,12 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     const db = new SupabaseClient(env);
     const media = await db.getMedia(telegramId);
     return json({
-      correspondence: media.filter((m) => m.section === 'correspondence').map((m) => m.url),
-      gallery: media.filter((m) => m.section === 'gallery').map((m) => m.url),
+      correspondence: media
+        .filter((m) => m.section === 'correspondence')
+        .map((m) => ({ url: m.url, type: m.media_type })),
+      gallery: media
+        .filter((m) => m.section === 'gallery')
+        .map((m) => ({ url: m.url, type: m.media_type })),
     });
   }
 

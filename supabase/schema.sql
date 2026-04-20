@@ -26,6 +26,7 @@ create table if not exists dossier_media (
   id          uuid        primary key default gen_random_uuid(),
   dossier_id  bigint      not null references dossiers(id) on delete cascade,
   section     text        not null check (section in ('correspondence', 'gallery')),
+  media_type  text        not null default 'image' check (media_type in ('image', 'video')),
   url         text        not null,
   created_at  timestamptz not null default now()
 );

@@ -12,6 +12,7 @@ export type BotState =
   | 'add_media_photos';
 
 export type MediaSection = 'correspondence' | 'gallery';
+export type MediaType = 'image' | 'video';
 
 export interface TelegramUpdate {
   update_id: number;
@@ -26,6 +27,16 @@ export interface TelegramCallbackQuery {
   data?: string;
 }
 
+export interface TelegramVideo {
+  file_id: string;
+  file_unique_id: string;
+  width: number;
+  height: number;
+  duration: number;
+  mime_type?: string;
+  file_size?: number;
+}
+
 export interface TelegramMessage {
   message_id: number;
   from: TelegramUser;
@@ -33,6 +44,7 @@ export interface TelegramMessage {
   date: number;
   text?: string;
   photo?: TelegramPhotoSize[];
+  video?: TelegramVideo;
 }
 
 export interface TelegramUser {
@@ -85,6 +97,7 @@ export interface DossierMedia {
   id: string;
   dossier_id: number;
   section: MediaSection;
+  media_type: MediaType;
   url: string;
   created_at: string;
 }

@@ -1,4 +1,4 @@
-import type { BotState, Dossier, DossierMedia, Env, MediaSection, UserSession } from './types';
+import type { BotState, Dossier, DossierMedia, Env, MediaSection, MediaType, UserSession } from './types';
 
 export class SupabaseClient {
   private readonly url: string;
@@ -74,11 +74,16 @@ export class SupabaseClient {
     return (await res.json()) as DossierMedia[];
   }
 
-  async insertMedia(telegramId: number, section: MediaSection, url: string): Promise<void> {
+  async insertMedia(
+    telegramId: number,
+    section: MediaSection,
+    url: string,
+    mediaType: MediaType,
+  ): Promise<void> {
     await fetch(`${this.url}/rest/v1/dossier_media`, {
       method: 'POST',
       headers: this.headers(),
-      body: JSON.stringify({ dossier_id: telegramId, section, url }),
+      body: JSON.stringify({ dossier_id: telegramId, section, url, media_type: mediaType }),
     });
   }
 
@@ -102,14 +107,17 @@ export class SupabaseClient {
     section: MediaSection,
     buffer: ArrayBuffer,
     uuid: string,
+    mediaType: MediaType,
   ): Promise<string> {
-    const path = `${telegramId}/${section}/${uuid}.jpg`;
+    const ext = mediaType === 'video' ? 'mp4' : 'jpg';
+    const contentType = mediaType === 'video' ? 'video/mp4' : 'image/jpeg';
+    const path = `${telegramId}/${section}/${uuid}.${ext}`;
     await fetch(`${this.url}/storage/v1/object/media/${path}`, {
       method: 'POST',
       headers: {
         apikey: this.key,
         Authorization: `Bearer ${this.key}`,
-        'Content-Type': 'image/jpeg',
+        'Content-Type': contentType,
         'x-upsert': 'true',
       },
       body: buffer,

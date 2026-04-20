@@ -15,9 +15,14 @@ interface Dossier {
   avatar_url: string;
 }
 
+interface MediaItem {
+  url: string;
+  type: 'image' | 'video';
+}
+
 interface Media {
-  correspondence: string[];
-  gallery: string[];
+  correspondence: MediaItem[];
+  gallery: MediaItem[];
 }
 
 export default function DossierPage() {
@@ -26,8 +31,14 @@ export default function DossierPage() {
 
   const [dossier, setDossier] = useState<Dossier | null>(null);
   const [media, setMedia] = useState<Media>({ correspondence: [], gallery: [] });
+  const [lightboxType, setLightboxType] = useState<'image' | 'video'>('image');
   const [status, setStatus] = useState<'loading' | 'found' | 'not_found'>('loading');
   const [lightbox, setLightbox] = useState<string | null>(null);
+
+  const openLightbox = (url: string, type: 'image' | 'video') => {
+    setLightbox(url);
+    setLightboxType(type);
+  };
 
   useEffect(() => {
     if (!telegram_id || !/^\d+$/.test(telegram_id)) {
@@ -85,13 +96,23 @@ export default function DossierPage() {
           >
             ✕
           </button>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={lightbox}
-            alt=""
-            className="max-w-full max-h-[90vh] object-contain rounded-lg"
-            onClick={(e) => e.stopPropagation()}
-          />
+          {lightboxType === 'video' ? (
+            <video
+              src={lightbox}
+              controls
+              autoPlay
+              className="max-w-full max-h-[90vh] rounded-lg"
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={lightbox}
+              alt=""
+              className="max-w-full max-h-[90vh] object-contain rounded-lg"
+              onClick={(e) => e.stopPropagation()}
+            />
+          )}
         </div>
       )}
 
@@ -130,15 +151,15 @@ export default function DossierPage() {
           title="Переписка"
           icon="💬"
           photos={media.correspondence}
-          onOpen={setLightbox}
+          onOpen={openLightbox}
         />
 
         {/* Gallery */}
         <PhotoSection
-          title="Фото"
-          icon="📷"
+          title="Медиа"
+          icon="🎞️"
           photos={media.gallery}
-          onOpen={setLightbox}
+          onOpen={openLightbox}
         />
 
         {/* Static sections */}
@@ -166,8 +187,8 @@ function PhotoSection({
 }: {
   title: string;
   icon: string;
-  photos: string[];
-  onOpen: (url: string) => void;
+  photos: MediaItem[];
+  onOpen: (url: string, type: 'image' | 'video') => void;
 }) {
   return (
     <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl p-5 mb-4">
@@ -175,7 +196,7 @@ function PhotoSection({
         <span>{icon}</span>
         <span>{title}</span>
         {photos.length > 0 && (
-          <span className="ml-auto text-xs text-[var(--muted)]">{photos.length} фото</span>
+          <span className="ml-auto text-xs text-[var(--muted)]">{photos.length} файлов</span>
         )}
       </h2>
 
@@ -183,14 +204,30 @@ function PhotoSection({
         <p className="text-xs text-[var(--muted)]">Нет данных</p>
       ) : (
         <div className="grid grid-cols-3 gap-2">
-          {photos.map((url, i) => (
+          {photos.map((item, i) => (
             <button
               key={i}
-              onClick={() => onOpen(url)}
-              className="aspect-square rounded-lg overflow-hidden bg-[var(--border)] hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+              onClick={() => onOpen(item.url, item.type)}
+              className="relative aspect-square rounded-lg overflow-hidden bg-[var(--border)] hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={url} alt="" className="w-full h-full object-cover" />
+              {item.type === 'video' ? (
+                <>
+                  <video
+                    src={item.url}
+                    className="w-full h-full object-cover"
+                    muted
+                    preload="metadata"
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="bg-black/50 rounded-full w-8 h-8 flex items-center justify-center text-white text-sm">
+                      ▶
+                    </div>
+                  </div>
+                </>
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={item.url} alt="" className="w-full h-full object-cover" />
+              )}
             </button>
           ))}
         </div>

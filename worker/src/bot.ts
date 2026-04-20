@@ -1,5 +1,5 @@
 import { SupabaseClient } from './supabase';
-import type { BotState, Env, InlineKeyboard, MediaSection, TelegramUpdate } from './types';
+import type { BotState, Env, InlineKeyboard, MediaSection, MediaType, TelegramUpdate } from './types';
 
 // ─── Keyboards ────────────────────────────────────────────────────────────────
 
@@ -169,20 +169,30 @@ async function handleMessage(
 
   const { state, temp_data } = session;
 
-  // ── Загрузка медиафото ──
+  // ── Загрузка медиафайлов (фото и видео) ──
   if (state === 'add_media_photos') {
-    if (!message.photo?.length) {
-      await send(token, chatId, '❗ Отправьте фотографию.', KB_DONE);
-      return;
-    }
     const targetId = parseInt(temp_data.target_id, 10);
     const section = temp_data.media_section as MediaSection;
-    const photo = message.photo[message.photo.length - 1];
     const uuid = crypto.randomUUID();
-    const buffer = await downloadPhoto(token, photo.file_id);
-    const url = await db.uploadMedia(targetId, section, buffer, uuid);
-    await db.insertMedia(targetId, section, url);
-    await send(token, chatId, '✅ Фото добавлено. Отправьте ещё или завершите.', KB_DONE);
+
+    if (message.photo?.length) {
+      const photo = message.photo[message.photo.length - 1];
+      const buffer = await downloadFile(token, photo.file_id);
+      const url = await db.uploadMedia(targetId, section, buffer, uuid, 'image');
+      await db.insertMedia(targetId, section, url, 'image');
+      await send(token, chatId, '✅ Фото добавлено. Отправьте ещё или завершите.', KB_DONE);
+      return;
+    }
+
+    if (message.video) {
+      const buffer = await downloadFile(token, message.video.file_id);
+      const url = await db.uploadMedia(targetId, section, buffer, uuid, 'video');
+      await db.insertMedia(targetId, section, url, 'video');
+      await send(token, chatId, '✅ Видео добавлено. Отправьте ещё или завершите.', KB_DONE);
+      return;
+    }
+
+    await send(token, chatId, '❗ Отправьте фото или видео.', KB_DONE);
     return;
   }
 
@@ -211,7 +221,7 @@ async function handleMessage(
     }
     const targetId = parseInt(temp_data.target_id, 10);
     const photo = message.photo[message.photo.length - 1];
-    const buffer = await downloadPhoto(token, photo.file_id);
+    const buffer = await downloadFile(token, photo.file_id);
     const avatarUrl = await db.uploadAvatar(targetId, buffer);
     await db.upsertDossier(targetId, {
       full_name: temp_data.full_name ?? '',
@@ -273,11 +283,9 @@ async function answerCallback(token: string, callbackQueryId: string): Promise<v
   });
 }
 
-async function downloadPhoto(token: string, fileId: string): Promise<ArrayBuffer> {
+async function downloadFile(token: string, fileId: string): Promise<ArrayBuffer> {
   const res = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`);
   const data = (await res.json()) as { result: { file_path: string } };
-  const photo = await fetch(
-    `https://api.telegram.org/file/bot${token}/${data.result.file_path}`,
-  );
-  return photo.arrayBuffer();
+  const file = await fetch(`https://api.telegram.org/file/bot${token}/${data.result.file_path}`);
+  return file.arrayBuffer();
 }
