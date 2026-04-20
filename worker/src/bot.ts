@@ -448,7 +448,7 @@ async function handleMessage(
     }
     const mimeType = msg.document.mime_type ?? 'text/plain';
     const buf      = await dlFile(token, msg.document.file_id);
-    const parsed   = parseReport(buf, mimeType);
+    const parsed   = await parseReport(buf, mimeType);
 
     // Build patch object and summary
     const patch: Record<string, unknown> = {};
