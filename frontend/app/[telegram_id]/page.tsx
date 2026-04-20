@@ -27,36 +27,39 @@ interface InfoStructured {
   birthplace?: string; other?: string;
 }
 
-const INFO_LABELS: Array<[keyof InfoStructured, string]> = [
-  ['address_1',            'Адрес'],
-  ['address_2',            'Адрес 2'],
-  ['address_3',            'Адрес 3'],
-  ['registration',         'Прописка'],
-  ['passport',             'Паспорт'],
-  ['passport_2',           'Паспорт 2'],
-  ['snils',                'СНИЛС'],
-  ['inn',                  'ИНН'],
-  ['driver_license',       'Вод. удостоверение'],
-  ['driver_license_expiry','Срок ВУ'],
-  ['car',                  'Авто'],
-  ['car_vin',              'VIN'],
-  ['phones',               'Доп. телефоны'],
-  ['email',                'Email'],
-  ['ip',                   'IP-адрес'],
-  ['country',              'Страна'],
-  ['vk',                   'ВКонтакте'],
-  ['telegram',             'Telegram'],
-  ['tiktok',               'TikTok'],
-  ['social_media',         'Соцсети'],
-  ['work',                 'Место работы'],
-  ['inn_ip',               'ИНН ИП'],
-  ['birthplace',           'Место рождения'],
-  ['other',                'Прочее'],
+const INFO_GROUPS: Array<{ title: string; fields: Array<[keyof InfoStructured, string]> }> = [
+  { title: 'Адреса', fields: [
+    ['address_1', 'Адрес'], ['address_2', 'Адрес 2'], ['address_3', 'Адрес 3'], ['registration', 'Прописка'],
+  ]},
+  { title: 'Документы', fields: [
+    ['passport', 'Паспорт'], ['passport_2', 'Паспорт 2'], ['snils', 'СНИЛС'], ['inn', 'ИНН'],
+    ['driver_license', 'Вод. удостоверение'], ['driver_license_expiry', 'Срок ВУ'],
+  ]},
+  { title: 'Транспорт', fields: [
+    ['car', 'Авто'], ['car_vin', 'VIN'],
+  ]},
+  { title: 'Контакты', fields: [
+    ['phones', 'Доп. телефоны'], ['email', 'Email'], ['ip', 'IP-адрес'], ['country', 'Страна'],
+  ]},
+  { title: 'Соцсети', fields: [
+    ['vk', 'ВКонтакте'], ['telegram', 'Telegram'], ['tiktok', 'TikTok'], ['social_media', 'Соцсети'],
+  ]},
+  { title: 'Работа', fields: [
+    ['work', 'Место работы'], ['inn_ip', 'ИНН ИП'],
+  ]},
+  { title: 'Прочее', fields: [
+    ['birthplace', 'Место рождения'], ['other', 'Прочее'],
+  ]},
 ];
 
 function parseInfoText(raw: string): InfoStructured | null {
   if (!raw || !raw.trim().startsWith('{')) return null;
   try { return JSON.parse(raw) as InfoStructured; } catch { return null; }
+}
+
+function extractUrl(value: string): string | null {
+  const m = value.match(/https?:\/\/[^\s,;]+/);
+  return m ? m[0] : null;
 }
 
 interface Dossier {
@@ -93,7 +96,6 @@ export default function DossierPage() {
   const [media, setMedia]       = useState<Media>({ correspondence: [], gallery: [] });
   const [status, setStatus]     = useState<'loading' | 'found' | 'not_found'>('loading');
   const [lightbox, setLightbox] = useState<{ url: string; type: 'image' | 'video' } | null>(null);
-  const [relOpen, setRelOpen]   = useState(false);
 
   useEffect(() => {
     if (!telegram_id || !/^\d+$/.test(telegram_id)) { setStatus('not_found'); return; }
@@ -180,11 +182,11 @@ export default function DossierPage() {
           </div>
         </div>
 
-        {/* Подозревается в */}
+        {/* Подозревается в нарушении */}
         {visible('suspected_of') && dossier.suspected_of && (
           <div className="mb-4 rounded-xl border border-red-800/60 bg-red-950/40 p-5">
             <h2 className="text-xs font-semibold text-red-400 uppercase tracking-widest mb-2 flex items-center gap-2">
-              <span>🔴</span><span>Подозревается в</span>
+              <span>🔴</span><span>Подозревается в нарушении</span>
             </h2>
             <p className="text-sm text-red-200 leading-relaxed font-medium whitespace-pre-wrap">{dossier.suspected_of}</p>
           </div>
@@ -201,8 +203,10 @@ export default function DossierPage() {
         {visible('info') && dossier.info_text && (() => {
           const structured = parseInfoText(dossier.info_text);
           if (structured) {
-            const rows = INFO_LABELS.filter(([k]) => structured[k]);
-            if (!rows.length) return null;
+            const activeGroups = INFO_GROUPS
+              .map((g) => ({ ...g, rows: g.fields.filter(([k]) => structured[k]) }))
+              .filter((g) => g.rows.length > 0);
+            if (!activeGroups.length) return null;
             return (
               <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl mb-4 overflow-hidden">
                 <div className="px-5 py-4 border-b border-[var(--border)]">
@@ -210,14 +214,34 @@ export default function DossierPage() {
                     <span>ℹ️</span><span>Информация</span>
                   </h2>
                 </div>
-                <div className="divide-y divide-[var(--border)]">
-                  {rows.map(([k, label]) => (
-                    <div key={k} className="flex gap-4 px-5 py-3">
-                      <span className="text-xs text-[var(--muted)] w-36 flex-shrink-0 pt-0.5">{label}</span>
-                      <span className="text-xs break-all">{structured[k]}</span>
+                {activeGroups.map((group) => (
+                  <div key={group.title}>
+                    <div className="px-5 pt-3 pb-0.5">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--muted)] opacity-50">{group.title}</span>
                     </div>
-                  ))}
-                </div>
+                    <div className="divide-y divide-[var(--border)]">
+                      {group.rows.map(([k, label]) => {
+                        const val = structured[k]!;
+                        const url = extractUrl(val);
+                        return (
+                          <div key={k} className="flex items-start gap-3 px-5 py-2.5">
+                            <span className="text-xs text-[var(--muted)] w-36 flex-shrink-0 mt-0.5">{label}</span>
+                            <div className="flex-1 flex items-start gap-2 min-w-0">
+                              <span className="text-sm break-all flex-1">{val}</span>
+                              {url && (
+                                <a
+                                  href={url} target="_blank" rel="noreferrer"
+                                  className="flex-shrink-0 mt-0.5 text-[10px] font-medium text-[var(--accent)] border border-[var(--accent)]/40 rounded px-1.5 py-0.5 hover:bg-[var(--accent)]/10 transition-colors"
+                                  onClick={(e) => e.stopPropagation()}
+                                >↗ открыть</a>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             );
           }
@@ -231,23 +255,20 @@ export default function DossierPage() {
           );
         })()}
 
-        {/* Родственники */}
+        {/* Родственники — всегда открыты */}
         {visible('relatives') && relEntries.length > 0 && (
           <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl mb-4 overflow-hidden">
-            <button
-              className="w-full flex items-center justify-between px-5 py-4 text-sm font-semibold hover:bg-white/5 transition-colors"
-              onClick={() => setRelOpen((v) => !v)}
-            >
-              <span className="flex items-center gap-2"><span>🧬</span><span>Родственники</span><span className="text-xs text-[var(--muted)] font-normal ml-1">{relEntries.length}</span></span>
-              <span className="text-[var(--muted)] text-xs">{relOpen ? '▲' : '▼'}</span>
-            </button>
-            {relOpen && (
-              <div className="divide-y divide-[var(--border)] border-t border-[var(--border)]">
-                {relEntries.map(([key, val]) => (
-                  <InfoRow key={key} label={RELATIVE_LABELS[key]} value={val} />
-                ))}
-              </div>
-            )}
+            <div className="px-5 py-4 border-b border-[var(--border)]">
+              <h2 className="text-sm font-semibold flex items-center gap-2">
+                <span>🧬</span><span>Родственники</span>
+                <span className="text-xs text-[var(--muted)] font-normal">{relEntries.length}</span>
+              </h2>
+            </div>
+            <div className="divide-y divide-[var(--border)]">
+              {relEntries.map(([key, val]) => (
+                <InfoRow key={key} label={RELATIVE_LABELS[key]} value={val} />
+              ))}
+            </div>
           </div>
         )}
 

@@ -6,7 +6,7 @@ import type { BotState, Env, InlineKeyboard, MediaSection, MediaType, Relatives,
 // ─── Section config ────────────────────────────────────────────────────────────
 
 const SECTIONS = [
-  { code: 'suspected_of',   label: '🔴 Подозревается в' },
+  { code: 'suspected_of',   label: '🔴 Подозревается в нарушении' },
   { code: 'correspondence', label: '💬 Переписка' },
   { code: 'gallery',        label: '🎞️ Медиа' },
   { code: 'info',           label: 'ℹ️ Информация' },
@@ -44,7 +44,7 @@ const KB_MAIN: InlineKeyboard = {
 
 const kbView = (id: number): InlineKeyboard => ({
   inline_keyboard: [
-    [{ text: '✏️ Редактировать',    callback_data: `e:${id}` },   { text: '🔴 Подозревается в',  callback_data: `ef:${id}:sp` }],
+    [{ text: '✏️ Редактировать',    callback_data: `e:${id}` },   { text: '🔴 Подозревается в нарушении',  callback_data: `ef:${id}:sp` }],
     [{ text: '🧬 Родственники',     callback_data: `rel:${id}` }, { text: '📸 Добавить медиа',   callback_data: `am:${id}` }],
     [{ text: 'ℹ️ Информация',       callback_data: `inf:${id}` }, { text: '🗨️ Публичные чаты',  callback_data: `pm:${id}` }],
     [{ text: '📓 Заметки',          callback_data: `nt:${id}` },  { text: '🗃️ Разобрать отчёт', callback_data: `pf:${id}` }],
