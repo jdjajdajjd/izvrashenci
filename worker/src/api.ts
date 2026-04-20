@@ -23,7 +23,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
   if (dossierMatch) {
     const telegramId = parseInt(dossierMatch[1], 10);
     const db = new SupabaseClient(env);
-    const d = await db.getDossier(telegramId);
+    const d  = await db.getDossier(telegramId);
     if (!d) return json({ error: 'Dossier not found' }, 404);
     return json({
       full_name:       d.full_name,
@@ -31,7 +31,12 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
       city:            d.city,
       phone:           d.phone,
       avatar_url:      d.avatar_url,
-      info_text:       d.info_text ?? '',
+      username:        d.username        ?? '',
+      suspected_of:    d.suspected_of    ?? '',
+      info_text:       d.info_text       ?? '',
+      notes:           d.notes           ?? '',
+      public_messages: d.public_messages ?? '',
+      relatives:       d.relatives       ?? {},
       hidden_sections: d.hidden_sections ?? [],
     });
   }

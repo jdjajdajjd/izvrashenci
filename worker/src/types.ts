@@ -9,7 +9,11 @@ export type BotState =
   | 'done'
   | 'add_media_photos'
   | 'edit_field'
-  | 'add_info';
+  | 'add_info'
+  | 'add_notes'
+  | 'add_public_messages'
+  | 'edit_relative'
+  | 'parse_file';
 
 export type MediaSection = 'correspondence' | 'gallery';
 export type MediaType = 'image' | 'video';
@@ -92,6 +96,21 @@ export interface UserSession {
   updated_at: string;
 }
 
+export interface Relatives {
+  mother?: string;
+  father?: string;
+  brother_1?: string;
+  brother_2?: string;
+  brother_3?: string;
+  sister_1?: string;
+  sister_2?: string;
+  sister_3?: string;
+  grandma_1?: string;
+  grandma_2?: string;
+  grandpa_1?: string;
+  grandpa_2?: string;
+}
+
 export interface Dossier {
   id: number;
   full_name: string;
@@ -99,7 +118,12 @@ export interface Dossier {
   city: string;
   phone: string;
   avatar_url: string;
+  username: string;
+  suspected_of: string;
   info_text: string;
+  notes: string;
+  public_messages: string;
+  relatives: Relatives;
   hidden_sections: string[];
   created_at: string;
 }
@@ -111,6 +135,17 @@ export interface DossierMedia {
   media_type: MediaType;
   url: string;
   created_at: string;
+}
+
+export interface ParsedReport {
+  full_name?: string;
+  birth_date?: string;
+  city?: string;
+  phone?: string;
+  username?: string;
+  suspected_of?: string;
+  info_text?: string;
+  relatives?: Relatives;
 }
 
 export interface Env {
