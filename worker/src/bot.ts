@@ -1,5 +1,5 @@
 import { parseWithAI } from './kieai';
-import { parseReport } from './parser';
+import { extractText, parseReport, parseText } from './parser';
 import { SupabaseClient } from './supabase';
 import type { BotState, Env, InlineKeyboard, MediaSection, MediaType, Relatives, TelegramUpdate } from './types';
 
@@ -450,29 +450,27 @@ async function handleMessage(
     const mimeType = msg.document.mime_type ?? 'text/plain';
     const buf      = await dlFile(token, msg.document.file_id);
 
-    // Show "thinking" indicator
-    const usingAI = !!env.KIE_AI_KEY;
-    await edit(token, chatId, pmid, usingAI
-      ? '🤖 Анализирую файл через ИИ (Claude)...\n\nЭто займёт 5–15 секунд.'
-      : '🔄 Разбираю файл...', kbCancel(dossierId));
+    // Step 1: extract raw text (FlateDecode for PDF)
+    await edit(token, chatId, pmid, '🔄 Извлекаю текст из файла...', kbCancel(dossierId));
+    const rawText = await extractText(buf, mimeType);
 
-    // Try AI parsing first (kie.ai → Claude), fallback to regex
+    // Step 2: parse — AI first, regex fallback
     let aiError: string | undefined;
     let parsed = await (async () => {
-      if (env.KIE_AI_KEY) {
+      if (env.KIE_AI_KEY && rawText.trim().length > 20) {
+        await edit(token, chatId, pmid, '🤖 Анализирую через ИИ (Gemini/Claude)...\n\nЭто займёт 5–20 секунд.', kbCancel(dossierId));
         try {
-          return await parseWithAI(buf, mimeType, env.KIE_AI_KEY);
+          return await parseWithAI(rawText, env.KIE_AI_KEY);
         } catch (e) {
           aiError = String(e);
         }
       }
-      return parseReport(buf, mimeType);
+      return parseText(rawText);
     })();
 
-    // If AI failed — tell the user
     if (aiError) {
-      await edit(token, chatId, pmid, `⚠️ ИИ вернул ошибку, использую regex-парсер:\n\`${aiError.slice(0, 150)}\``, kbCancel(dossierId));
-      await new Promise(r => setTimeout(r, 2000));
+      await edit(token, chatId, pmid, `⚠️ ИИ недоступен, использую regex:\n\`${aiError.slice(0, 200)}\``, kbCancel(dossierId));
+      await new Promise(r => setTimeout(r, 3000));
     }
 
     // Build patch object and summary

@@ -194,15 +194,14 @@ async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
+/** Extract raw text from a file (PDF or plain text). */
+export async function extractText(buffer: ArrayBuffer, mimeType: string): Promise<string> {
+  if (mimeType.includes('pdf')) return extractPdfText(buffer);
+  return new TextDecoder('utf-8', { fatal: false }).decode(buffer);
+}
+
 export async function parseReport(buffer: ArrayBuffer, mimeType: string): Promise<ParsedReport> {
-  let text: string;
-
-  if (mimeType.includes('pdf')) {
-    text = await extractPdfText(buffer);
-  } else {
-    text = new TextDecoder('utf-8', { fatal: false }).decode(buffer);
-  }
-
+  const text = await extractText(buffer, mimeType);
   return parseText(text);
 }
 

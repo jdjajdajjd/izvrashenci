@@ -1,134 +1,121 @@
 import type { ParsedReport, Relatives } from './types';
 
-// ─── Base64 helper ────────────────────────────────────────────────────────────
+// ─── Prompt ───────────────────────────────────────────────────────────────────
 
-function toBase64(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf);
-  let s = '';
-  for (const b of bytes) s += String.fromCharCode(b);
-  return btoa(s);
-}
-
-// ─── Claude via kie.ai ────────────────────────────────────────────────────────
-
-const SYSTEM_PROMPT = `Ты — система извлечения данных из документов досье.
-Твоя задача — извлечь структурированную информацию из предоставленного документа.
-Отвечай ТОЛЬКО валидным JSON, без пояснений, markdown-блоков или лишнего текста.`;
-
-const USER_PROMPT = `Извлеки из этого документа следующие поля. Верни ТОЛЬКО JSON-объект.
+const PROMPT = (text: string) => `Ты — система извлечения данных. Из текста ниже извлеки поля и верни ТОЛЬКО валидный JSON без markdown и пояснений.
 
 Правила:
-- Извлекай ТОЛЬКО то, что явно написано в документе
-- НЕ придумывай и НЕ угадывай значения
-- Если поле отсутствует — ставь null
-- Дату рождения переводи в формат ДД.ММ.ГГГГ
-- Телефон указывай в формате +7XXXXXXXXXX
-- Username без символа @
+- Берёшь ТОЛЬКО то, что явно написано. Не придумываешь.
+- Если поле отсутствует — null.
+- birth_date → формат ДД.ММ.ГГГГ
+- phone → формат +7XXXXXXXXXX
+- username → без @
 
-Формат ответа:
+Формат ответа (строго этот JSON):
 {
-  "full_name": "Фамилия Имя Отчество или null",
-  "birth_date": "ДД.ММ.ГГГГ или null",
-  "city": "Город или null",
-  "phone": "Телефон или null",
-  "username": "telegram_username или null",
-  "suspected_of": "В чём подозревается или null",
+  "full_name": "...",
+  "birth_date": "...",
+  "city": "...",
+  "phone": "...",
+  "username": "...",
+  "suspected_of": "...",
   "relatives": {
-    "mother": "ФИО матери или null",
-    "father": "ФИО отца или null",
-    "brother_1": "ФИО брата или null",
-    "sister_1": "ФИО сестры или null",
-    "grandma_1": "ФИО бабушки или null",
-    "grandpa_1": "ФИО дедушки или null"
+    "mother": "...", "father": "...",
+    "brother_1": "...", "sister_1": "...",
+    "grandma_1": "...", "grandpa_1": "..."
   },
-  "info_text": "Прочая важная информация одной строкой: адрес, паспорт, СНИЛС, ИНН, авто, соцсети и т.д. или null"
-}`;
-
-interface ClaudeResponse {
-  content?: Array<{ type: string; text: string }>;
-  error?: { message: string };
+  "info_text": "адрес, паспорт, СНИЛС, ИНН, авто, соцсети и т.д."
 }
 
-export async function parseWithAI(buf: ArrayBuffer, mimeType: string, apiKey: string): Promise<ParsedReport> {
-  const isPdf = mimeType.includes('pdf');
+Текст документа:
+---
+${text.slice(0, 6000)}
+---`;
 
-  // Build content array for Claude
-  const content: unknown[] = [];
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-  if (isPdf) {
-    content.push({
-      type: 'document',
-      source: {
-        type: 'base64',
-        media_type: 'application/pdf',
-        data: toBase64(buf),
-      },
-    });
-  } else {
-    // Plain text
-    const text = new TextDecoder('utf-8', { fatal: false }).decode(buf);
-    content.push({ type: 'text', text: `Документ:\n\n${text}` });
-  }
+function parseJson(raw: string): ParsedReport {
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error(`no JSON in: ${raw.slice(0, 100)}`);
+  const obj = JSON.parse(match[0]) as Record<string, unknown>;
 
-  content.push({ type: 'text', text: USER_PROMPT });
+  const str = (v: unknown): string | undefined => {
+    if (typeof v !== 'string') return undefined;
+    const t = v.trim();
+    return t && t.toLowerCase() !== 'null' ? t : undefined;
+  };
 
-  const res = await fetch('https://api.kie.ai/claude/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 2048,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content }],
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`kie.ai error ${res.status}: ${err.slice(0, 200)}`);
-  }
-
-  const data = (await res.json()) as ClaudeResponse;
-  const raw  = data.content?.[0]?.text ?? '';
-
-  // Extract JSON from response (strip possible markdown code fences)
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error(`No JSON in response: ${raw.slice(0, 200)}`);
-
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-  } catch {
-    throw new Error(`Invalid JSON: ${jsonMatch[0].slice(0, 200)}`);
-  }
-
-  // Convert to ParsedReport, stripping nulls
   const result: ParsedReport = {};
+  if (str(obj.full_name))    result.full_name    = str(obj.full_name);
+  if (str(obj.birth_date))   result.birth_date   = str(obj.birth_date);
+  if (str(obj.city))         result.city         = str(obj.city);
+  if (str(obj.phone))        result.phone        = str(obj.phone);
+  if (str(obj.username))     result.username     = str(obj.username);
+  if (str(obj.suspected_of)) result.suspected_of = str(obj.suspected_of);
+  if (str(obj.info_text))    result.info_text    = str(obj.info_text);
 
-  const str = (v: unknown): string | undefined =>
-    typeof v === 'string' && v.trim() && v.trim().toLowerCase() !== 'null' ? v.trim() : undefined;
-
-  if (str(parsed.full_name))    result.full_name    = str(parsed.full_name);
-  if (str(parsed.birth_date))   result.birth_date   = str(parsed.birth_date);
-  if (str(parsed.city))         result.city         = str(parsed.city);
-  if (str(parsed.phone))        result.phone        = str(parsed.phone);
-  if (str(parsed.username))     result.username     = str(parsed.username);
-  if (str(parsed.suspected_of)) result.suspected_of = str(parsed.suspected_of);
-  if (str(parsed.info_text))    result.info_text    = str(parsed.info_text);
-
-  if (parsed.relatives && typeof parsed.relatives === 'object') {
-    const rel = parsed.relatives as Record<string, unknown>;
-    const relatives: Relatives = {};
-    const relKeys: (keyof Relatives)[] = ['mother','father','brother_1','sister_1','grandma_1','grandpa_1'];
-    for (const k of relKeys) {
+  if (obj.relatives && typeof obj.relatives === 'object') {
+    const rel = obj.relatives as Record<string, unknown>;
+    const out: Relatives = {};
+    for (const k of ['mother','father','brother_1','sister_1','grandma_1','grandpa_1'] as (keyof Relatives)[]) {
       const v = str(rel[k]);
-      if (v) relatives[k] = v;
+      if (v) out[k] = v;
     }
-    if (Object.keys(relatives).length) result.relatives = relatives;
+    if (Object.keys(out).length) result.relatives = out;
   }
 
   return result;
+}
+
+async function callModel(endpoint: string, model: string, userText: string, apiKey: string): Promise<string> {
+  const res = await fetch(`https://api.kie.ai${endpoint}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model,
+      max_tokens: 2048,
+      messages: [{ role: 'user', content: userText }],
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`kie.ai ${res.status}: ${body.slice(0, 200)}`);
+  }
+  const data = await res.json() as {
+    choices?: Array<{ message?: { content?: string } }>;
+    content?:  Array<{ text?: string }>;
+  };
+  // OpenAI-compatible (Gemini)
+  if (data.choices?.[0]?.message?.content) return data.choices[0].message.content;
+  // Anthropic-compatible (Claude)
+  if (data.content?.[0]?.text) return data.content[0].text;
+  throw new Error('empty response');
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+/**
+ * Try multiple models in order until one succeeds.
+ * textContent = already-extracted text from the PDF/file.
+ */
+export async function parseWithAI(textContent: string, apiKey: string): Promise<ParsedReport> {
+  const prompt = PROMPT(textContent);
+
+  const models: Array<{ endpoint: string; model: string }> = [
+    { endpoint: '/gemini-2.5-flash/v1/chat/completions', model: 'gemini-2.5-flash' },
+    { endpoint: '/gemini-2.5-pro/v1/chat/completions',   model: 'gemini-2.5-pro' },
+    { endpoint: '/claude/v1/messages',                   model: 'claude-haiku-4-5' },
+    { endpoint: '/claude/v1/messages',                   model: 'claude-sonnet-4-5' },
+  ];
+
+  const errors: string[] = [];
+  for (const { endpoint, model } of models) {
+    try {
+      const raw = await callModel(endpoint, model, prompt, apiKey);
+      return parseJson(raw);
+    } catch (e) {
+      errors.push(`${model}: ${e}`);
+    }
+  }
+  throw new Error(errors.join(' | '));
 }
